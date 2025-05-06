@@ -3,7 +3,7 @@
 client_id = "51752d377cde9364562d507d368336aa"
 name = "Hospeco Refund App"
 handle = "hospeco-refund-app"
-application_url = "https://dating-phrase-options-since.trycloudflare.com"
+application_url = "https://hospeco-refund-app.onrender.com"
 embedded = true
 
 [build]
@@ -17,10 +17,11 @@ scopes = "read_customers,read_orders,read_products,write_customers,write_orders,
 
 [auth]
 redirect_urls = [
-  "https://dating-phrase-options-since.trycloudflare.com/auth/callback",
-  "https://dating-phrase-options-since.trycloudflare.com/auth/shopify/callback",
-  "https://dating-phrase-options-since.trycloudflare.com/api/auth/callback"
+  "https://hospeco-refund-app.onrender.com/auth/callback",
+  "https://hospeco-refund-app.onrender.com/auth/shopify/callback",
+  "https://hospeco-refund-app.onrender.com/api/auth/callback"
 ]
+
 
 [webhooks]
 api_version = "2025-04"
