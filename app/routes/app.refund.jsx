@@ -138,7 +138,7 @@ export const action = async ({ request }) => {
       }
     };
 
-    const endpoint = isCalculation ? "http://localhost:4000/calculate" : "http://localhost:4000/refund";
+    const endpoint = isCalculation ? "https://phpstack-1419716-5486887.cloudwaysapps.com/calculate" : "https://phpstack-1419716-5486887.cloudwaysapps.com/refund";
 
     const res = await fetch(endpoint, {
       method: "POST",
@@ -268,7 +268,7 @@ export default function RefundPage() {
 
     if (paymentMode === 'paypal') {
       try {
-        const res = await fetch("http://localhost:4000/paypal-refund", {
+        const res = await fetch("https://phpstack-1419716-5486887.cloudwaysapps.com/paypal-refund", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ transactionId, amount }),
