@@ -449,9 +449,9 @@ export default function RefundPage() {
                   { title: "Date" },
                   { title: "Total" },
                   { title: "Payment Status" },
-                  { title: "Transaction ID" },
-                  { title: "Gateway" },
-                  { title: "Location ID" }
+                  // { title: "Transaction ID" },
+                  // { title: "Gateway" },
+                  // { title: "Location ID" }
                 ]}
               >
                 {orders.map((order, index) => (
