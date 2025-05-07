@@ -466,9 +466,9 @@ export default function RefundPage() {
                     <IndexTable.Cell>{new Date(order.createdAt).toLocaleString()}</IndexTable.Cell>
                     <IndexTable.Cell>{order.totalPriceSet.shopMoney.amount} {order.totalPriceSet.shopMoney.currencyCode}</IndexTable.Cell>
                     <IndexTable.Cell>{order.displayFinancialStatus || "Unknown"}</IndexTable.Cell>
-                    <IndexTable.Cell>{order.transactionId || "N/A"}</IndexTable.Cell>
-                    <IndexTable.Cell>{order.gateway || "manual"}</IndexTable.Cell>
-                    <IndexTable.Cell>{order.locationId || "70116966605"}</IndexTable.Cell>
+                    {/* <IndexTable.Cell>{order.transactionId || "N/A"}</IndexTable.Cell> */}
+                    {/* <IndexTable.Cell>{order.gateway || "manual"}</IndexTable.Cell> */}
+                    {/* <IndexTable.Cell>{order.locationId || "70116966605"}</IndexTable.Cell> */}
                   </IndexTable.Row>
                 ))}
               </IndexTable>
