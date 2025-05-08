@@ -249,7 +249,7 @@ export default function RefundPage() {
 
     const { metafields } = selectedOrder;
 
-    const summary = `🧾 Refund Summary:\n\n` +
+    const summary = `\n🧾 Refund Summary:\n\n` +
       selectedProducts.map(p => `• ${p.title} (Qty: ${p.quantity} × $${p.price})`).join("\n") +
       (shippingRefundSelected ? `\n• Shipping: $${parseFloat(shippingRefundAmount).toFixed(2)}` : "") +
       `\n• Tax: $${taxAmount.toFixed(2)}` +
@@ -288,6 +288,30 @@ export default function RefundPage() {
 
       } catch (err) {
         alert("❌ PayPal refund error: " + err.message);
+        return;
+      }
+    } else if (paymentMode === 'stripe') {
+      try {
+        const res = await fetch("https://phpstack-1419716-5486887.cloudwaysapps.com/stripe-refund", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ transactionId, amount }),
+        });
+
+        const data = await res.json();
+        if (!data.success) {
+          alert("❌ Stripe refund failed: " + data.message);
+          return;
+        }
+
+        const payload = preparePayload();
+        payload.variables.input.note = `Refunded via Stripe: ${data.stripeRefundId}`;
+        const formData = new FormData();
+        formData.append("body", JSON.stringify({ ...payload, mode: "refund" }));
+        fetcher.submit(formData, { method: "POST" });
+
+      } catch (err) {
+        alert("❌ Stripe refund error: " + err.message);
         return;
       }
     } else {
