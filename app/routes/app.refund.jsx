@@ -295,7 +295,7 @@ export default function RefundPage() {
         const res = await fetch("https://phpstack-1419716-5486887.cloudwaysapps.com/stripe-refund", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ transactionId, amount }),
+          body: JSON.stringify({ chargeId: transactionId, amount })
         });
 
         const data = await res.json();
