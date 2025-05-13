@@ -108,22 +108,37 @@ export const loader = async ({ request }) => {
   const paginatedOrders = filteredOrders.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const selectedOrder = selectedOrderId ? allOrders.find(o => o.id === selectedOrderId) : null;
 
-  // ✅ Fetch refunded data if order selected
+  // ✅ Fetch refunded item data
   let refundedItems = [];
   let refundedQtyMap = {};
   let refundedShippingAmount = 0;
+  let refundReasons = [];
 
   if (selectedOrderId && selectedOrder) {
     try {
-      const response = await fetch(
-        `https://phpstack-1419716-5486887.cloudwaysapps.com/refunded-products/${selectedOrder.orderId}`
-      );
-      const data = await response.json();
-      refundedItems = data.refundedItems || [];
-      refundedQtyMap = data.refundedQtyMap || {};
-      refundedShippingAmount = data.refundedShippingAmount || 0;
+      const refundRes = await fetch(`https://phpstack-1419716-5486887.cloudwaysapps.com/refunded-products/${selectedOrder.orderId}`);
+      const result = await refundRes.json();
+      refundedItems = result.refundedItems || [];
+      refundedQtyMap = result.refundedQtyMap || {};
+      refundedShippingAmount = result.refundedShippingAmount || 0;
     } catch (err) {
-      console.error("❌ Error loading refunded items:", err.message);
+      console.warn("Could not fetch refunded item data", err);
+    }
+
+    // 🧾 Fetch all refund transactions for reason tracking (note fields)
+    try {
+      const txns = await admin.rest.get({ path: `/admin/api/2023-10/orders/${selectedOrder.orderId}/refunds.json` });
+      const refunds = txns?.body?.refunds || [];
+      refundReasons = refunds.map(r => ({
+        note: r.note,
+        transactions: r.transactions.map(t => ({
+          amount: t.amount,
+          gateway: t.gateway,
+          id: t.id,
+        }))
+      }));
+    } catch (e) {
+      console.warn("Refund notes fetch failed");
     }
   }
 
@@ -135,6 +150,7 @@ export const loader = async ({ request }) => {
     refundedItems,
     refundedQtyMap,
     refundedShippingAmount,
+    refundReasons
   });
 };
 
@@ -191,6 +207,7 @@ export const action = async ({ request }) => {
 
 
 
+
 import {
   Page, Layout, Card, Text, Box, Button, TextField,
   IndexTable, Pagination, Thumbnail, Grid
@@ -201,7 +218,8 @@ import { useState, useEffect } from "react";
 export default function RefundPage() {
   const {
     orders, total, page, selectedOrder,
-    refundedItems, refundedQtyMap, refundedShippingAmount
+    refundedItems, refundedQtyMap,
+    refundedShippingAmount, refundReasons
   } = useLoaderData();
 
   const [searchParams, setSearchParams] = useSearchParams();
@@ -213,14 +231,12 @@ export default function RefundPage() {
   const [refundMeta, setRefundMeta] = useState(null);
   const [filter, setFilter] = useState("");
   const fetcher = useFetcher();
-
   const totalPages = Math.ceil(total / 25);
 
-  // Load actual shipping price on mount
   useEffect(() => {
     if (selectedOrder?.shippingLines?.edges?.[0]?.node?.originalPriceSet?.shopMoney?.amount) {
-      const originalShipping = parseFloat(selectedOrder.shippingLines.edges[0].node.originalPriceSet.shopMoney.amount);
-      const remaining = Math.max(0, originalShipping - refundedShippingAmount);
+      const original = parseFloat(selectedOrder.shippingLines.edges[0].node.originalPriceSet.shopMoney.amount);
+      const remaining = Math.max(0, original - refundedShippingAmount);
       setShippingRefundAmount(remaining.toFixed(2));
     }
   }, [selectedOrder]);
@@ -252,12 +268,10 @@ export default function RefundPage() {
     setSearchParams(params);
   };
 
-  const productSubtotal = selectedProducts.reduce(
-    (sum, item) => sum + (parseFloat(item.price) * item.quantity), 0
-  );
+  const subtotal = selectedProducts.reduce((sum, item) => sum + (item.quantity * parseFloat(item.price)), 0);
   const taxAmount = parseFloat(selectedOrder?.totalTaxSet?.shopMoney?.amount || 0);
-  const shippingRefundValue = shippingRefundSelected ? parseFloat(shippingRefundAmount || 0) : 0;
-  const refundTotal = productSubtotal + taxAmount + shippingRefundValue;
+  const shippingRefundValue = shippingRefundSelected ? parseFloat(shippingRefundAmount) : 0;
+  const refundTotal = subtotal + taxAmount + shippingRefundValue;
 
   const preparePayload = () => ({
     mode: refundMeta ? "refund" : "calculate",
@@ -288,43 +302,34 @@ export default function RefundPage() {
   };
 
   const handleRefund = async () => {
-    if (selectedProducts.length === 0 || !refundMeta) return;
-
     const { metafields } = selectedOrder;
-    const summary = `\n🧾 Refund Summary:\n\n` +
-      selectedProducts.map(p => `• ${p.title} (Qty: ${p.quantity} × $${p.price})`).join("\n") +
-      (shippingRefundSelected ? `\n• Shipping: $${parseFloat(shippingRefundAmount).toFixed(2)}` : "") +
-      `\n• Tax: $${taxAmount.toFixed(2)}` +
-      `\n• Total Refund: $${refundMeta.amount}` +
-      `\n\n📌 Payment Info:\n` +
-      `• Mode: ${metafields?.payment_mode || "N/A"}\n` +
-      `• Txn ID: ${metafields?.transaction_id_number || "N/A"}` +
-      `\n\nClick OK to continue with the refund.`;
+    const confirmText = `Refunding ${refundMeta?.amount || refundTotal}?\nTxn: ${refundMeta?.transaction_id || "?"}\nGateway: ${selectedOrder.gateway}`;
+    if (!window.confirm(confirmText)) return;
 
-    if (!window.confirm(summary)) return;
-
-    const paymentMode = metafields?.payment_mode?.toLowerCase();
+    const mode = metafields?.payment_mode?.toLowerCase();
     const transactionId = metafields?.transaction_id_number;
     const amount = refundMeta.amount;
     const payload = preparePayload();
 
-    if (paymentMode === 'paypal') {
+    if (mode === "paypal") {
       const res = await fetch("https://phpstack-1419716-5486887.cloudwaysapps.com/paypal-refund", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ transactionId, amount }),
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ transactionId, amount })
       });
       const data = await res.json();
-      if (!data.success) return alert("❌ PayPal refund failed: " + data.message);
+      if (!data.success) return alert(data.message);
       payload.variables.input.note = `Refunded via PayPal: ${data.paypalRefundId}`;
     }
 
-    if (paymentMode === 'stripe') {
+    if (mode === "stripe") {
       const res = await fetch("https://phpstack-1419716-5486887.cloudwaysapps.com/stripe-refund", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chargeId: transactionId, amount }),
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chargeId: transactionId, amount })
       });
       const data = await res.json();
-      if (!data.success) return alert("❌ Stripe refund failed: " + data.message);
+      if (!data.success) return alert(data.message);
       payload.variables.input.note = `Refunded via Stripe: ${data.stripeRefundId}`;
     }
 
@@ -332,10 +337,7 @@ export default function RefundPage() {
     formData.append("body", JSON.stringify({ ...payload, mode: "refund" }));
     fetcher.submit(formData, { method: "POST" });
 
-    setTimeout(() => {
-      alert(`\n✅ Refund Successful!\nAmount: $${amount}\nTxn: ${refundMeta.transaction_id}`);
-      goBack();
-    }, 800);
+    setTimeout(() => goBack(), 1000);
   };
 
   return (
@@ -345,81 +347,63 @@ export default function RefundPage() {
           <>
             <Button onClick={goBack}>&larr; Back to Order List</Button>
 
-            {/* ✅ Refunded Items */}
-            {(refundedItems?.length > 0 || refundedShippingAmount > 0) && (
-              <Card title="Refunded Items" sectioned>
+            {/* ✅ Removed Block */}
+            {refundedItems.length > 0 && (
+              <Card title="Removed (Already Refunded)" sectioned>
                 {refundedItems.map((item, idx) => (
                   <Box key={idx} paddingBlock="200" display="flex" justifyContent="space-between">
                     <Box>
                       <Text fontWeight="bold">{item.title}</Text>
                       <Text variant="bodySm">SKU: {item.sku}</Text>
+                      <Text variant="bodySm">
+                        {item.price} × {item.quantity_refunded} = ${(item.price * item.quantity_refunded).toFixed(2)}
+                      </Text>
                     </Box>
-                    <Box>
-                      <Text>Qty Refunded: {item.quantity_refunded}</Text>
-                      <Text color="critical">Refunded</Text>
-                    </Box>
+                    <Text color="critical">Refunded</Text>
                   </Box>
                 ))}
                 {refundedShippingAmount > 0 && (
                   <Box paddingBlock="200" display="flex" justifyContent="space-between">
-                    <Box>
-                      <Text fontWeight="bold">Shipping</Text>
-                    </Box>
-                    <Box>
-                      <Text>Refunded: ${refundedShippingAmount.toFixed(2)}</Text>
-                      <Text color="critical">Refunded</Text>
-                    </Box>
+                    <Text>Shipping</Text>
+                    <Text color="critical">-${refundedShippingAmount.toFixed(2)}</Text>
                   </Box>
                 )}
               </Card>
             )}
 
-            {/* ✅ Refundable Line Items */}
-            <Card>
-              <Text variant="headingMd">Order Line Items</Text>
+            {/* ✅ Refundable Items */}
+            <Card title="Items to Refund" sectioned>
               {selectedOrder.lineItems.map(item => {
-                const maxQty = item.quantity - (parseInt(refundedQtyMap[item.id]) || 0);
+                const refundedQty = parseInt(refundedQtyMap[item.id]) || 0;
+                const maxQty = item.quantity - refundedQty;
                 if (maxQty <= 0) return null;
 
-                const existing = selectedProducts.find(p => p.id === item.id);
-                const selectedQuantity = existing?.quantity || 0;
+                const selected = selectedProducts.find(p => p.id === item.id);
+                const qty = selected?.quantity || 0;
 
                 return (
-                  <Box key={item.id} display="flex" alignItems="center" paddingBlock="300">
-                    <Thumbnail
-                      source={item.image?.originalSrc || "https://cdn.shopify.com/s/files/1/0752/6435/6351/files/no-image-icon.png"}
-                      alt={item.image?.altText || "Product image"}
-                      size="small"
-                    />
-                    <Box paddingInlineStart="300" flexGrow={1}>
+                  <Box key={item.id} display="flex" alignItems="center" paddingBlock="200">
+                    <Thumbnail source={item.image?.originalSrc} alt={item.image?.altText} size="small" />
+                    <Box paddingInlineStart="200" flexGrow={1}>
                       <Text fontWeight="bold">{item.title}</Text>
                       <Text variant="bodySm">{item.sku}</Text>
                       <Text variant="bodySm">
-                        ${item.discountedUnitPriceSet.shopMoney.amount} × {item.quantity}
+                        ${item.discountedUnitPriceSet.shopMoney.amount} × {maxQty}
                       </Text>
                     </Box>
                     <input
                       type="number"
                       min="0"
                       max={maxQty}
-                      value={selectedQuantity}
-                      onChange={(e) => {
-                        const qty = parseInt(e.target.value) || 0;
+                      value={qty}
+                      onChange={e => {
+                        const val = parseInt(e.target.value) || 0;
                         setSelectedProducts(prev => {
-                          const withoutThis = prev.filter(p => p.id !== item.id);
-                          if (qty > 0) {
-                            return [...withoutThis, {
-                              id: item.id,
-                              title: item.title,
-                              quantity: qty,
-                              price: item.discountedUnitPriceSet.shopMoney.amount
-                            }];
-                          } else {
-                            return withoutThis;
-                          }
+                          const filtered = prev.filter(p => p.id !== item.id);
+                          return val > 0 ? [...filtered, { id: item.id, title: item.title, quantity: val, price: item.discountedUnitPriceSet.shopMoney.amount }] : filtered;
                         });
                       }}
-                      style={{ width: "50px", marginLeft: "10px" }}
+                      style={{ width: "60px" }}
                     />
                   </Box>
                 );
@@ -427,66 +411,52 @@ export default function RefundPage() {
             </Card>
 
             {/* ✅ Shipping Refund */}
-            <Card title="Refund Shipping" sectioned>
-              <Box display="flex" alignItems="center" gap="300">
-                <input
-                  type="checkbox"
-                  checked={shippingRefundSelected}
-                  onChange={e => setShippingRefundSelected(e.target.checked)}
-                />
-                <Text>Freight - ${shippingRefundAmount}</Text>
-                <input
-                  type="text"
-                  disabled={!shippingRefundSelected}
-                  value={shippingRefundAmount}
-                  onChange={e => setShippingRefundAmount(e.target.value)}
-                  style={{ marginLeft: "auto", width: 100, padding: 5 }}
-                />
-              </Box>
-            </Card>
+            {parseFloat(shippingRefundAmount) > 0 && (
+              <Card title="Refund Shipping" sectioned>
+                <Box display="flex" alignItems="center" gap="300">
+                  <input
+                    type="checkbox"
+                    checked={shippingRefundSelected}
+                    onChange={e => setShippingRefundSelected(e.target.checked)}
+                  />
+                  <Text>Shipping (${shippingRefundAmount})</Text>
+                </Box>
+              </Card>
+            )}
 
-            {/* ✅ Reason + Summary */}
+            {/* ✅ Refund Reason */}
             <Card title="Reason for Refund" sectioned>
               <TextField
                 value={reasonForRefund}
                 onChange={setReasonForRefund}
                 multiline={2}
-                placeholder="Only you and staff can see this reason"
+                placeholder="Staff note only"
               />
             </Card>
 
+            {/* ✅ Summary Box (Shopify Style) */}
             <Card title="Summary" sectioned>
-              <Box display="flex" justifyContent="space-between">
-                <Text>Item subtotal</Text>
-                <Text>${productSubtotal.toFixed(2)}</Text>
-              </Box>
-              <Box display="flex" justifyContent="space-between" paddingBlockStart="100">
-                <Text>Tax</Text>
-                <Text>${taxAmount.toFixed(2)}</Text>
-              </Box>
-              <Box display="flex" justifyContent="space-between" paddingBlockStart="100">
-                <Text>Shipping</Text>
-                <Text>${shippingRefundValue.toFixed(2)}</Text>
-              </Box>
-              <Box display="flex" justifyContent="space-between" paddingBlockStart="300">
-                <Text fontWeight="bold">Refund total</Text>
-                <Text fontWeight="bold">${refundTotal.toFixed(2)}</Text>
-              </Box>
-
-              <Box paddingBlockStart="200">
-                <Button fullWidth variant="secondary" onClick={handleCalculateRefund} disabled={selectedProducts.length === 0}>
-                  Calculate Refund
-                </Button>
-              </Box>
-
-              <Box paddingBlockStart="300">
-                <Button fullWidth variant="primary" onClick={handleRefund} disabled={!refundMeta || selectedProducts.length === 0}>
-                  {refundMeta
-                    ? `Refund $${refundMeta.amount} (TX: ${refundMeta.transaction_id})`
-                    : `Refund $${refundTotal.toFixed(2)}`}
-                </Button>
-              </Box>
+              <Box display="flex" justifyContent="space-between"><Text>Subtotal</Text><Text>${subtotal.toFixed(2)}</Text></Box>
+              <Box display="flex" justifyContent="space-between"><Text>Tax</Text><Text>${taxAmount.toFixed(2)}</Text></Box>
+              <Box display="flex" justifyContent="space-between"><Text>Shipping</Text><Text>${shippingRefundValue.toFixed(2)}</Text></Box>
+              <Box display="flex" justifyContent="space-between" paddingBlockStart="300"><Text fontWeight="bold">Total</Text><Text fontWeight="bold">${refundTotal.toFixed(2)}</Text></Box>
+              <Box paddingBlockStart="200"><Button fullWidth variant="secondary" onClick={handleCalculateRefund} disabled={selectedProducts.length === 0}>Calculate Refund</Button></Box>
+              <Box paddingBlockStart="300"><Button fullWidth variant="primary" onClick={handleRefund} disabled={!refundMeta}>Refund ${refundMeta?.amount || refundTotal.toFixed(2)}</Button></Box>
             </Card>
+
+            {/* ✅ Paid > Refunded Reason Summary */}
+            {refundReasons.length > 0 && (
+              <Card title="Paid → Refunded" sectioned>
+                {refundReasons.map((r, i) => (
+                  <Box key={i} paddingBlock="200">
+                    <Text>{r.note}</Text>
+                    {r.transactions.map((t, j) => (
+                      <Text key={j} color="critical">- ${parseFloat(t.amount).toFixed(2)} ({t.gateway})</Text>
+                    ))}
+                  </Box>
+                ))}
+              </Card>
+            )}
           </>
         ) : (
           <Layout.Section>
@@ -514,16 +484,12 @@ export default function RefundPage() {
                   { title: "Email" },
                   { title: "Date" },
                   { title: "Total" },
-                  { title: "Payment Status" },
+                  { title: "Payment Status" }
                 ]}
               >
                 {orders.map((order, index) => (
                   <IndexTable.Row id={order.id} key={order.id} position={index}>
-                    <IndexTable.Cell>
-                      <Button variant="plain" onClick={() => showOrder(order.id)}>
-                        {order.name}
-                      </Button>
-                    </IndexTable.Cell>
+                    <IndexTable.Cell><Button variant="plain" onClick={() => showOrder(order.id)}>{order.name}</Button></IndexTable.Cell>
                     <IndexTable.Cell>{order.orderId}</IndexTable.Cell>
                     <IndexTable.Cell>{order.email}</IndexTable.Cell>
                     <IndexTable.Cell>{new Date(order.createdAt).toLocaleString()}</IndexTable.Cell>
