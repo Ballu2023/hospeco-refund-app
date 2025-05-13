@@ -44,9 +44,7 @@ export const loader = async ({ request }) => {
               }
               metafields(first: 10, namespace: "custom") {
                 edges {
-                  node {
-                    key value
-                  }
+                  node { key value }
                 }
               }
             }
@@ -55,7 +53,9 @@ export const loader = async ({ request }) => {
       }
     `;
 
-    const response = await admin.graphql(query, { variables: { first: 250, after: afterCursor } });
+    const response = await admin.graphql(query, {
+      variables: { first: 250, after: afterCursor },
+    });
     const data = await response.json();
     const orders = data.data.orders.edges;
 
@@ -65,7 +65,9 @@ export const loader = async ({ request }) => {
         let transactionId = null, gateway = "manual", locationId = 70116966605;
 
         try {
-          const txResp = await admin.rest.get({ path: `/admin/api/2023-10/orders/${orderIdNum}/transactions.json` });
+          const txResp = await admin.rest.get({
+            path: `/admin/api/2023-10/orders/${orderIdNum}/transactions.json`,
+          });
           const tx = txResp?.body?.transactions?.[0];
           if (tx) {
             transactionId = tx.id;
@@ -89,7 +91,7 @@ export const loader = async ({ request }) => {
           transactionId,
           gateway,
           locationId,
-          metafields
+          metafields,
         });
       }
     }
@@ -98,7 +100,7 @@ export const loader = async ({ request }) => {
     afterCursor = hasNextPage ? orders[orders.length - 1].cursor : null;
   }
 
-  const filteredOrders = allOrders.filter(order => {
+  const filteredOrders = allOrders.filter((order) => {
     const cleanSearch = search.replace("#", "");
     return (
       order.name.toLowerCase().replace("#", "").includes(cleanSearch) ||
@@ -107,13 +109,17 @@ export const loader = async ({ request }) => {
   });
 
   const paginatedOrders = filteredOrders.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-  const selectedOrder = selectedOrderId ? allOrders.find(o => o.id === selectedOrderId) : null;
+  const selectedOrder = selectedOrderId
+    ? allOrders.find((o) => o.id === selectedOrderId)
+    : null;
 
-  // ✅ Fetch Refunded Products if selectedOrderId exists
+  // ✅ Refunded product logic
   let refundedItems = [];
   if (selectedOrderId) {
     try {
-      const res = await fetch(`https://phpstack-1419716-5486887.cloudwaysapps.com/refunded-products/${selectedOrder.orderId}`);
+      const res = await fetch(
+        `https://phpstack-1419716-5486887.cloudwaysapps.com/refunded-products/${selectedOrder.orderId}`
+      );
       const result = await res.json();
       refundedItems = result.refundedItems || [];
     } catch (err) {
@@ -140,7 +146,7 @@ export const action = async ({ request }) => {
 
     const payload = {
       refund: {
-        refund_line_items: input.refundLineItems.map(item => ({
+        refund_line_items: input.refundLineItems.map((item) => ({
           line_item_id: item.lineItemId.split("/").pop(),
           quantity: item.quantity,
         })),
@@ -148,13 +154,17 @@ export const action = async ({ request }) => {
         currency: "AUD",
         notify: input.notifyCustomer,
         note: input.note || "Refund via app",
-        transactions: isCalculation ? undefined : [{
-          parent_id: input.transactionId,
-          amount: input.totalAmount,
-          kind: "refund",
-          gateway: input.gateway,
-        }],
-      }
+        transactions: isCalculation
+          ? undefined
+          : [
+              {
+                parent_id: input.transactionId,
+                amount: input.totalAmount,
+                kind: "refund",
+                gateway: input.gateway,
+              },
+            ],
+      },
     };
 
     const endpoint = isCalculation
@@ -180,10 +190,11 @@ export const action = async ({ request }) => {
 
 
 
-// ✅ app/routes/app.refund.jsx — FULL UI EXPORT DEFAULT COMPONENT
+
+// ✅ Part 2 — Remix UI Component (default export in app.routes.app.refund.jsx)
 import {
   Page, Layout, Card, Text, Box, Button, TextField,
-  IndexTable, Pagination, Thumbnail, Grid
+  IndexTable, Pagination, Thumbnail
 } from "@shopify/polaris";
 import { useLoaderData, useSearchParams, useFetcher } from "@remix-run/react";
 import { useState, useEffect } from "react";
@@ -202,7 +213,6 @@ export default function RefundPage() {
 
   const totalPages = Math.ceil(total / 25);
 
-  // ✅ Fix: Load shipping amount on first mount (even before refresh)
   useEffect(() => {
     if (selectedOrder?.shippingLines?.edges?.[0]?.node?.originalPriceSet?.shopMoney?.amount) {
       setShippingRefundAmount(selectedOrder.shippingLines.edges[0].node.originalPriceSet.shopMoney.amount);
@@ -310,7 +320,7 @@ export default function RefundPage() {
       const res = await fetch("https://phpstack-1419716-5486887.cloudwaysapps.com/stripe-refund", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chargeId: transactionId, amount })
+        body: JSON.stringify({ chargeId: transactionId, amount }),
       });
       const data = await res.json();
       if (!data.success) return alert("❌ Stripe refund failed: " + data.message);
@@ -322,7 +332,7 @@ export default function RefundPage() {
     fetcher.submit(formData, { method: "POST" });
 
     setTimeout(() => {
-      alert(`\n✅ Refund Successful!\n\nAmount: $${amount}\nTxn: ${refundMeta.transaction_id}`);
+      alert(`✅ Refund Successful!\n\nAmount: $${amount}\nTxn: ${refundMeta.transaction_id}`);
       goBack();
     }, 800);
   };
@@ -352,10 +362,16 @@ export default function RefundPage() {
               </Card>
             )}
 
-            {/* ✅ Product Line Items for Refund */}
+            {/* ✅ Product Line Items */}
             <Card>
               <Text variant="headingMd">Order Line Items</Text>
               {selectedOrder.lineItems.map(item => {
+                const refundedItem = refundedItems.find(ref => ref.id === item.id);
+                const refundedQty = refundedItem?.quantity_refunded || 0;
+                const remainingQty = item.quantity - refundedQty;
+
+                if (remainingQty <= 0) return null;
+
                 const existing = selectedProducts.find(p => p.id === item.id);
                 const selectedQuantity = existing?.quantity || 0;
 
@@ -370,13 +386,13 @@ export default function RefundPage() {
                       <Text fontWeight="bold">{item.title}</Text>
                       <Text variant="bodySm">{item.sku}</Text>
                       <Text variant="bodySm">
-                        ${item.discountedUnitPriceSet.shopMoney.amount} × {item.quantity}
+                        ${item.discountedUnitPriceSet.shopMoney.amount} × {remainingQty} remaining
                       </Text>
                     </Box>
                     <input
                       type="number"
                       min="0"
-                      max={item.quantity}
+                      max={remainingQty}
                       value={selectedQuantity}
                       onChange={(e) => {
                         const qty = parseInt(e.target.value) || 0;
@@ -430,7 +446,7 @@ export default function RefundPage() {
               />
             </Card>
 
-            {/* ✅ Summary Box */}
+            {/* ✅ Summary */}
             <Card title="Summary" sectioned>
               <Box display="flex" justifyContent="space-between">
                 <Text>Item subtotal</Text>
@@ -523,15 +539,4 @@ export default function RefundPage() {
       </div>
     </Page>
   );
-}
-
-
-
-
-
-
-
-
-
-
-
+};
