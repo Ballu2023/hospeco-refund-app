@@ -1,128 +1,120 @@
-// ✅ COMPLETE LOGIC PART — app/routes/app.refund.jsx
+// ✅ Part 1: Complete Logic - app/routes/app.refund.jsx
 import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 
 export const loader = async ({ request }) => {
-  try {
-    const { admin } = await authenticate.admin(request);
-    const url = new URL(request.url);
-    const search = url.searchParams.get("search")?.toLowerCase().trim() || "";
-    const page = parseInt(url.searchParams.get("page")) || 1;
-    const selectedOrderId = url.searchParams.get("orderId") || null;
+  const { admin } = await authenticate.admin(request);
+  const url = new URL(request.url);
+  const search = url.searchParams.get("search")?.toLowerCase().trim() || "";
+  const page = parseInt(url.searchParams.get("page")) || 1;
+  const selectedOrderId = url.searchParams.get("orderId") || null;
 
-    const PAGE_SIZE = 25;
-    let hasNextPage = true;
-    let afterCursor = null;
-    const allOrders = [];
+  const PAGE_SIZE = 25;
+  let hasNextPage = true;
+  let afterCursor = null;
+  const allOrders = [];
 
-    while (hasNextPage && allOrders.length < 1000) {
-      const query = `
-        query GetOrders($first: Int!, $after: String) {
-          orders(first: $first, after: $after, reverse: true) {
-            pageInfo { hasNextPage }
-            edges {
-              cursor
-              node {
-                id name email createdAt sourceName displayFinancialStatus
-                totalPriceSet { shopMoney { amount currencyCode } }
-                totalTaxSet { shopMoney { amount } }
-                shippingLines(first: 1) {
-                  edges {
-                    node {
-                      title
-                      originalPriceSet { shopMoney { amount currencyCode } }
-                    }
+  while (hasNextPage && allOrders.length < 1000) {
+    const query = `
+      query GetOrders($first: Int!, $after: String) {
+        orders(first: $first, after: $after, reverse: true) {
+          pageInfo { hasNextPage }
+          edges {
+            cursor
+            node {
+              id name email createdAt sourceName displayFinancialStatus
+              totalPriceSet { shopMoney { amount currencyCode } }
+              totalTaxSet { shopMoney { amount } }
+              shippingLines(first: 1) {
+                edges {
+                  node {
+                    title
+                    originalPriceSet { shopMoney { amount currencyCode } }
                   }
                 }
-                lineItems(first: 20) {
-                  edges {
-                    node {
-                      id title quantity sku
-                      image { originalSrc altText }
-                      discountedUnitPriceSet { shopMoney { amount currencyCode } }
-                      refundableQuantity
-                    }
+              }
+              lineItems(first: 50) {
+                edges {
+                  node {
+                    id title quantity sku
+                    image { originalSrc altText }
+                    discountedUnitPriceSet { shopMoney { amount currencyCode } }
                   }
                 }
-                metafields(first: 10, namespace: "custom") {
-                  edges {
-                    node { key value }
-                  }
+              }
+              metafields(first: 20, namespace: "custom") {
+                edges {
+                  node { key value }
                 }
               }
             }
           }
-        }`;
-
-      const response = await admin.graphql(query, { variables: { first: 250, after: afterCursor } });
-      const data = await response.json();
-      const orders = data.data.orders.edges;
-
-      for (const { node, cursor } of orders) {
-        if (node.sourceName !== "web") {
-          const orderIdNum = node.id.split("/").pop();
-          let transactionId = null, gateway = "manual", locationId = 70116966605;
-
-          try {
-            const txResp = await admin.rest.get({ path: `/admin/api/2023-10/orders/${orderIdNum}/transactions.json` });
-            const tx = txResp?.body?.transactions?.[0];
-            if (tx) {
-              transactionId = tx.id;
-              gateway = tx.gateway || "manual";
-              locationId = tx.location_id || locationId;
-            }
-          } catch (e) {
-            console.warn("Transaction fetch failed:", e);
-          }
-
-          const metafields = {};
-          node.metafields.edges.forEach(({ node }) => {
-            metafields[node.key] = node.value;
-          });
-
-          const updatedLineItems = node.lineItems.edges.map(({ node: li }) => {
-            const refundable = li.refundableQuantity ?? li.quantity;
-            return {
-              ...li,
-              remainingQuantity: refundable,
-              isRefunded: refundable === 0
-            };
-          });
-
-          allOrders.push({
-            ...node,
-            cursor,
-            lineItems: updatedLineItems,
-            orderId: orderIdNum,
-            transactionId,
-            gateway,
-            locationId,
-            metafields,
-            fullyRefunded: node.displayFinancialStatus?.toLowerCase().includes("refunded")
-          });
         }
       }
+    `;
 
-      hasNextPage = data.data.orders.pageInfo.hasNextPage;
-      afterCursor = hasNextPage ? orders[orders.length - 1].cursor : null;
+    const response = await admin.graphql(query, { variables: { first: 250, after: afterCursor } });
+    const data = await response.json();
+    const orders = data.data.orders.edges;
+
+    for (const { node, cursor } of orders) {
+      if (node.sourceName !== "web") {
+        const orderIdNum = node.id.split("/").pop();
+        let transactionId = null, gateway = "manual", locationId = 70116966605;
+
+        try {
+          const txResp = await admin.rest.get({ path: `/admin/api/2023-10/orders/${orderIdNum}/transactions.json` });
+          const tx = txResp?.body?.transactions?.[0];
+          if (tx) {
+            transactionId = tx.id;
+            gateway = tx.gateway || "manual";
+            locationId = tx.location_id || locationId;
+          }
+        } catch (e) {
+          console.warn("Transaction fetch failed:", e);
+        }
+
+        const metafields = {};
+        node.metafields.edges.forEach(({ node }) => {
+          metafields[node.key] = node.value;
+        });
+
+        const refundedItemIds = (metafields.refunded_item_ids || "").split(",").filter(Boolean);
+
+        const enrichedLineItems = node.lineItems.edges.map(({ node: item }) => ({
+          ...item,
+          refunded: refundedItemIds.includes(item.id)
+        }));
+
+        allOrders.push({
+          ...node,
+          cursor,
+          lineItems: enrichedLineItems,
+          orderId: orderIdNum,
+          transactionId,
+          gateway,
+          locationId,
+          metafields
+        });
+      }
     }
 
-    const filteredOrders = allOrders.filter(order => {
-      const cleanSearch = search.replace("#", "");
-      return (
-        order.name.toLowerCase().replace("#", "").includes(cleanSearch) ||
-        order.email.toLowerCase().includes(cleanSearch)
-      );
-    });
-
-    const paginatedOrders = filteredOrders.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-    const selectedOrder = selectedOrderId ? allOrders.find(o => o.id === selectedOrderId) : null;
-
-    return json({ orders: paginatedOrders, total: filteredOrders.length, page, selectedOrder });
-  } catch (err) {
-    console.error("Loader error:", err);
-    return json({ error: "Loader failed." }, { status: 500 });
+    hasNextPage = data.data.orders.pageInfo.hasNextPage;
+    afterCursor = hasNextPage ? orders[orders.length - 1].cursor : null;
   }
+
+  const filteredOrders = allOrders.filter(order => {
+    const cleanSearch = search.replace("#", "");
+    return (
+      order.name.toLowerCase().replace("#", "").includes(cleanSearch) ||
+      order.email.toLowerCase().includes(cleanSearch)
+    );
+  });
+
+  const paginatedOrders = filteredOrders.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const selectedOrder = selectedOrderId ? allOrders.find(o => o.id === selectedOrderId) : null;
+
+  return json({ orders: paginatedOrders, total: filteredOrders.length, page, selectedOrder });
 };
 
 export const action = async ({ request }) => {
@@ -150,13 +142,13 @@ export const action = async ({ request }) => {
             kind: "refund",
             gateway: input.gateway,
           }
-        ]
+        ],
       }
     };
 
     const endpoint = isCalculation
-      ? "https://phpstack-1419716-5289324.cloudwaysapps.com//calculate"
-      : "https://phpstack-1419716-5289324.cloudwaysapps.com//refund";
+      ? "https://phpstack-1419716-5289324.cloudwaysapps.com/calculate"
+      : "https://phpstack-1419716-5289324.cloudwaysapps.com/refund";
 
     const res = await fetch(endpoint, {
       method: "POST",
@@ -172,6 +164,7 @@ export const action = async ({ request }) => {
     return json({ error: "Refund failed." }, { status: 500 });
   }
 };
+
 
 
 
@@ -258,7 +251,7 @@ export default function RefundPage() {
     }
   });
 
-  const handleCalculateRefund = () => {
+ const handleCalculateRefund = () => {
     const formData = new FormData();
     formData.append("body", JSON.stringify({ ...preparePayload(), mode: "calculate" }));
     fetcher.submit(formData, { method: "POST" });
@@ -266,11 +259,84 @@ export default function RefundPage() {
 
   const handleRefund = async () => {
     if (selectedProducts.length === 0 || !refundMeta) return;
-    const formData = new FormData();
-    formData.append("body", JSON.stringify({ ...preparePayload(), mode: "refund" }));
-    fetcher.submit(formData, { method: "POST" });
-    alert(`\n✅ Refund Successful!\n\nAmount: $${refundMeta.amount}\nTxn: ${refundMeta.transaction_id}`);
-    goBack();
+
+    const { metafields } = selectedOrder;
+
+    const summary = `\n🧾 Refund Summary:\n\n` +
+      selectedProducts.map(p => `• ${p.title} (Qty: ${p.quantity} × $${p.price})`).join("\n") +
+      (shippingRefundSelected ? `\n• Shipping: $${parseFloat(shippingRefundAmount).toFixed(2)}` : "") +
+      `\n• Tax: $${taxAmount.toFixed(2)}` +
+      `\n• Total Refund: $${refundMeta.amount}` +
+      `\n\n📌 Payment Info:\n` +
+      `• Mode: ${metafields?.payment_mode || "N/A"}\n` +
+      `• Txn ID: ${metafields?.transaction_id_number || "N/A"}` +
+      `\n\nClick OK to continue with the refund.`;
+
+    const confirmRefund = window.confirm(summary);
+    if (!confirmRefund) return;
+
+    const paymentMode = metafields?.payment_mode?.toLowerCase();
+    const transactionId = metafields?.transaction_id_number;
+    const amount = refundMeta.amount;
+
+    if (paymentMode === 'paypal') {
+      try {
+        const res = await fetch("https://phpstack-1419716-5486887.cloudwaysapps.com/paypal-refund", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ transactionId, amount }),
+        });
+
+        const data = await res.json();
+        if (!data.success) {
+          alert("❌ PayPal refund failed: " + data.message);
+          return;
+        }
+
+        const payload = preparePayload();
+        payload.variables.input.note = `Refunded via PayPal: ${data.paypalRefundId}`;
+        const formData = new FormData();
+        formData.append("body", JSON.stringify({ ...payload, mode: "refund" }));
+        fetcher.submit(formData, { method: "POST" });
+
+      } catch (err) {
+        alert("❌ PayPal refund error: " + err.message);
+        return;
+      }
+    } else if (paymentMode === 'stripe') {
+      try {
+        const res = await fetch("https://phpstack-1419716-5486887.cloudwaysapps.com/stripe-refund", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ chargeId: transactionId, amount })
+        });
+
+        const data = await res.json();
+        if (!data.success) {
+          alert("❌ Stripe refund failed: " + data.message);
+          return;
+        }
+
+        const payload = preparePayload();
+        payload.variables.input.note = `Refunded via Stripe: ${data.stripeRefundId}`;
+        const formData = new FormData();
+        formData.append("body", JSON.stringify({ ...payload, mode: "refund" }));
+        fetcher.submit(formData, { method: "POST" });
+
+      } catch (err) {
+        alert("❌ Stripe refund error: " + err.message);
+        return;
+      }
+    } else {
+      const formData = new FormData();
+      formData.append("body", JSON.stringify({ ...preparePayload(), mode: "refund" }));
+      fetcher.submit(formData, { method: "POST" });
+    }
+
+    setTimeout(() => {
+      alert(`\n✅ Refund Successful!\n\nAmount: $${amount}\nTxn: ${refundMeta.transaction_id}`);
+      goBack();
+    }, 800);
   };
 
   const refundableItems = selectedOrder?.lineItems.filter(item => item.remainingQuantity > 0);
