@@ -98,35 +98,42 @@ export const loader = async ({ request }) => {
     afterCursor = hasNextPage ? orders[orders.length - 1].cursor : null;
   }
 
+  // Fetch all refunded items in bulk
+  const allRefundedItems = {};
+  try {
+    const res = await fetch(`https://phpstack-1419716-5486887.cloudwaysapps.com/refunded-products/bulk`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ orderIds: allOrders.map(o => o.orderId) })
+    });
+    const result = await res.json();
+    result.forEach(item => {
+      allRefundedItems[item.orderId] = item.refundedItems || [];
+    });
+  } catch (err) {
+    console.error("❌ Bulk refunded products fetch failed:", err);
+  }
+
   const filteredOrders = allOrders.filter(order => {
     const cleanSearch = search.replace("#", "");
     return (
       order.name.toLowerCase().replace("#", "").includes(cleanSearch) ||
       order.email.toLowerCase().includes(cleanSearch)
     );
-  });
+  }).map(order => ({
+    ...order,
+    refundedItems: allRefundedItems[order.orderId] || []
+  }));
 
   const paginatedOrders = filteredOrders.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-  const selectedOrder = selectedOrderId ? allOrders.find(o => o.id === selectedOrderId) : null;
-
-  // ✅ Fetch Refunded Products if selectedOrderId exists
-  let refundedItems = [];
-  if (selectedOrderId) {
-    try {
-      const res = await fetch(`https://phpstack-1419716-5486887.cloudwaysapps.com/refunded-products/${selectedOrder.orderId}`);
-      const result = await res.json();
-      refundedItems = result.refundedItems || [];
-    } catch (err) {
-      console.error("❌ Refunded products fetch failed:", err);
-    }
-  }
+  const selectedOrder = selectedOrderId ? filteredOrders.find(o => o.id === selectedOrderId) : null;
 
   return json({
     orders: paginatedOrders,
     total: filteredOrders.length,
     page,
     selectedOrder,
-    refundedItems,
+    refundedItems: selectedOrder?.refundedItems || [],
   });
 };
 
@@ -176,14 +183,10 @@ export const action = async ({ request }) => {
   }
 };
 
-
-
-
-
 // ✅ app/routes/app.refund.jsx — FULL UI EXPORT DEFAULT COMPONENT
 import {
   Page, Layout, Card, Text, Box, Button, TextField,
-  IndexTable, Pagination, Thumbnail, Grid
+  IndexTable, Pagination, Thumbnail, Grid, Badge
 } from "@shopify/polaris";
 import { useLoaderData, useSearchParams, useFetcher } from "@remix-run/react";
 import { useState, useEffect } from "react";
@@ -202,11 +205,13 @@ export default function RefundPage() {
 
   const totalPages = Math.ceil(total / 25);
 
-  // ✅ Fix: Load shipping amount on first mount (even before refresh)
   useEffect(() => {
     if (selectedOrder?.shippingLines?.edges?.[0]?.node?.originalPriceSet?.shopMoney?.amount) {
       setShippingRefundAmount(selectedOrder.shippingLines.edges[0].node.originalPriceSet.shopMoney.amount);
     }
+    // Reset selections when order changes
+    setSelectedProducts([]);
+    setRefundMeta(null);
   }, [selectedOrder]);
 
   useEffect(() => {
@@ -234,6 +239,12 @@ export default function RefundPage() {
     const params = new URLSearchParams(searchParams);
     params.delete("orderId");
     setSearchParams(params);
+  };
+
+  const getRefundedQuantity = (lineItemId) => {
+    const itemId = lineItemId.split('/').pop();
+    const refundedItem = refundedItems.find(item => item.line_item_id === itemId);
+    return refundedItem?.quantity_refunded || 0;
   };
 
   const productSubtotal = selectedProducts.reduce(
@@ -336,7 +347,7 @@ export default function RefundPage() {
 
             {/* ✅ Refunded Items Section */}
             {refundedItems?.length > 0 && (
-              <Card title="Refunded Items" sectioned>
+              <Card title="Previously Refunded Items" sectioned>
                 {refundedItems.map((item, idx) => (
                   <Box key={idx} paddingBlock="200" display="flex" justifyContent="space-between">
                     <Box>
@@ -345,7 +356,7 @@ export default function RefundPage() {
                     </Box>
                     <Box>
                       <Text>Qty Refunded: {item.quantity_refunded}</Text>
-                      <Text color="critical">Refunded</Text>
+                      <Badge status="critical">Refunded</Badge>
                     </Box>
                   </Box>
                 ))}
@@ -356,6 +367,8 @@ export default function RefundPage() {
             <Card>
               <Text variant="headingMd">Order Line Items</Text>
               {selectedOrder.lineItems.map(item => {
+                const refundedQty = getRefundedQuantity(item.id);
+                const maxRefundable = item.quantity - refundedQty;
                 const existing = selectedProducts.find(p => p.id === item.id);
                 const selectedQuantity = existing?.quantity || 0;
 
@@ -371,31 +384,46 @@ export default function RefundPage() {
                       <Text variant="bodySm">{item.sku}</Text>
                       <Text variant="bodySm">
                         ${item.discountedUnitPriceSet.shopMoney.amount} × {item.quantity}
+                        {refundedQty > 0 && (
+                          <Text color="critical" as="span"> (Refunded: {refundedQty})</Text>
+                        )}
                       </Text>
                     </Box>
-                    <input
-                      type="number"
-                      min="0"
-                      max={item.quantity}
-                      value={selectedQuantity}
-                      onChange={(e) => {
-                        const qty = parseInt(e.target.value) || 0;
-                        setSelectedProducts(prev => {
-                          const withoutThis = prev.filter(p => p.id !== item.id);
-                          if (qty > 0) {
-                            return [...withoutThis, {
-                              id: item.id,
-                              title: item.title,
-                              quantity: qty,
-                              price: item.discountedUnitPriceSet.shopMoney.amount
-                            }];
-                          } else {
-                            return withoutThis;
-                          }
-                        });
-                      }}
-                      style={{ width: "50px", marginLeft: "10px" }}
-                    />
+                    <Box display="flex" alignItems="center" gap="200">
+                      <input
+                        type="number"
+                        min="0"
+                        max={maxRefundable}
+                        value={selectedQuantity}
+                        onChange={(e) => {
+                          const qty = Math.min(maxRefundable, parseInt(e.target.value) || 0);
+                          setSelectedProducts(prev => {
+                            const withoutThis = prev.filter(p => p.id !== item.id);
+                            if (qty > 0) {
+                              return [...withoutThis, {
+                                id: item.id,
+                                title: item.title,
+                                quantity: qty,
+                                price: item.discountedUnitPriceSet.shopMoney.amount
+                              }];
+                            } else {
+                              return withoutThis;
+                            }
+                          });
+                        }}
+                        style={{ width: "50px", padding: "5px" }}
+                      />
+                      {selectedQuantity > 0 && (
+                        <Button 
+                          variant="plain" 
+                          onClick={() => {
+                            setSelectedProducts(prev => prev.filter(p => p.id !== item.id));
+                          }}
+                        >
+                          Remove
+                        </Button>
+                      )}
+                    </Box>
                   </Box>
                 );
               })}
@@ -428,10 +456,31 @@ export default function RefundPage() {
                 multiline={2}
                 placeholder="Only you and staff can see this reason"
               />
+              <Box paddingBlockStart="200">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={emailCustomer}
+                    onChange={() => setEmailCustomer(!emailCustomer)}
+                    style={{ marginRight: "8px" }}
+                  />
+                  Notify customer via email
+                </label>
+              </Box>
             </Card>
 
             {/* ✅ Summary Box */}
             <Card title="Summary" sectioned>
+              {refundedItems.length > 0 && (
+                <Box paddingBlockEnd="200">
+                  <Text variant="bodySm" color="subdued">
+                    Previously refunded: ${refundedItems.reduce((sum, item) => 
+                      sum + (item.price * item.quantity_refunded), 0
+                    ).toFixed(2)}
+                  </Text>
+                </Box>
+              )}
+              
               <Box display="flex" justifyContent="space-between">
                 <Text>Item subtotal</Text>
                 <Text>${productSubtotal.toFixed(2)}</Text>
@@ -491,6 +540,7 @@ export default function RefundPage() {
                   { title: "Date" },
                   { title: "Total" },
                   { title: "Payment Status" },
+                  { title: "Refunds" },
                 ]}
               >
                 {orders.map((order, index) => (
@@ -505,6 +555,13 @@ export default function RefundPage() {
                     <IndexTable.Cell>{new Date(order.createdAt).toLocaleString()}</IndexTable.Cell>
                     <IndexTable.Cell>{order.totalPriceSet.shopMoney.amount} {order.totalPriceSet.shopMoney.currencyCode}</IndexTable.Cell>
                     <IndexTable.Cell>{order.displayFinancialStatus || "Unknown"}</IndexTable.Cell>
+                    <IndexTable.Cell>
+                      {order.refundedItems?.length > 0 ? (
+                        <Badge status="critical">{order.refundedItems.length} refunds</Badge>
+                      ) : (
+                        <Badge status="success">No refunds</Badge>
+                      )}
+                    </IndexTable.Cell>
                   </IndexTable.Row>
                 ))}
               </IndexTable>
@@ -524,14 +581,3 @@ export default function RefundPage() {
     </Page>
   );
 }
-
-
-
-
-
-
-
-
-
-
-
