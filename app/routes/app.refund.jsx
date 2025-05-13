@@ -1,4 +1,4 @@
-// app/routes/app.refund.jsx
+// ✅ Part 1 — LOADER and ACTION Logic (app/routes/app.refund.jsx)
 import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 
@@ -54,6 +54,7 @@ export const loader = async ({ request }) => {
         }
       }
     `;
+
     const response = await admin.graphql(query, { variables: { first: 250, after: afterCursor } });
     const data = await response.json();
     const orders = data.data.orders.edges;
@@ -108,7 +109,25 @@ export const loader = async ({ request }) => {
   const paginatedOrders = filteredOrders.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const selectedOrder = selectedOrderId ? allOrders.find(o => o.id === selectedOrderId) : null;
 
-  return json({ orders: paginatedOrders, total: filteredOrders.length, page, selectedOrder });
+  // ✅ Fetch Refunded Products if selectedOrderId exists
+  let refundedItems = [];
+  if (selectedOrderId) {
+    try {
+      const res = await fetch(`https://phpstack-1419716-5486887.cloudwaysapps.com/refunded-products/${selectedOrder.orderId}`);
+      const result = await res.json();
+      refundedItems = result.refundedItems || [];
+    } catch (err) {
+      console.error("❌ Refunded products fetch failed:", err);
+    }
+  }
+
+  return json({
+    orders: paginatedOrders,
+    total: filteredOrders.length,
+    page,
+    selectedOrder,
+    refundedItems,
+  });
 };
 
 export const action = async ({ request }) => {
@@ -138,7 +157,9 @@ export const action = async ({ request }) => {
       }
     };
 
-    const endpoint = isCalculation ? "https://phpstack-1419716-5486887.cloudwaysapps.com/calculate" : "https://phpstack-1419716-5486887.cloudwaysapps.com/refund";
+    const endpoint = isCalculation
+      ? "https://phpstack-1419716-5486887.cloudwaysapps.com/calculate"
+      : "https://phpstack-1419716-5486887.cloudwaysapps.com/refund";
 
     const res = await fetch(endpoint, {
       method: "POST",
@@ -159,6 +180,7 @@ export const action = async ({ request }) => {
 
 
 
+// ✅ app/routes/app.refund.jsx — FULL UI EXPORT DEFAULT COMPONENT
 import {
   Page, Layout, Card, Text, Box, Button, TextField,
   IndexTable, Pagination, Thumbnail, Grid
@@ -167,13 +189,11 @@ import { useLoaderData, useSearchParams, useFetcher } from "@remix-run/react";
 import { useState, useEffect } from "react";
 
 export default function RefundPage() {
-  const { orders, total, page, selectedOrder } = useLoaderData();
+  const { orders, total, page, selectedOrder, refundedItems } = useLoaderData();
   const [searchParams, setSearchParams] = useSearchParams();
   const [selectedProducts, setSelectedProducts] = useState([]);
   const [shippingRefundSelected, setShippingRefundSelected] = useState(false);
-  const [shippingRefundAmount, setShippingRefundAmount] = useState(
-    selectedOrder?.shippingLines?.edges?.[0]?.node?.originalPriceSet?.shopMoney?.amount || "0.00"
-  );
+  const [shippingRefundAmount, setShippingRefundAmount] = useState("0.00");
   const [reasonForRefund, setReasonForRefund] = useState("");
   const [emailCustomer, setEmailCustomer] = useState(true);
   const [refundMeta, setRefundMeta] = useState(null);
@@ -181,6 +201,13 @@ export default function RefundPage() {
   const fetcher = useFetcher();
 
   const totalPages = Math.ceil(total / 25);
+
+  // ✅ Fix: Load shipping amount on first mount (even before refresh)
+  useEffect(() => {
+    if (selectedOrder?.shippingLines?.edges?.[0]?.node?.originalPriceSet?.shopMoney?.amount) {
+      setShippingRefundAmount(selectedOrder.shippingLines.edges[0].node.originalPriceSet.shopMoney.amount);
+    }
+  }, [selectedOrder]);
 
   useEffect(() => {
     if (fetcher.data?.transactionId && fetcher.data?.amount) {
@@ -266,59 +293,33 @@ export default function RefundPage() {
     const transactionId = metafields?.transaction_id_number;
     const amount = refundMeta.amount;
 
+    const payload = preparePayload();
+
     if (paymentMode === 'paypal') {
-      try {
-        const res = await fetch("https://phpstack-1419716-5486887.cloudwaysapps.com/paypal-refund", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ transactionId, amount }),
-        });
-
-        const data = await res.json();
-        if (!data.success) {
-          alert("❌ PayPal refund failed: " + data.message);
-          return;
-        }
-
-        const payload = preparePayload();
-        payload.variables.input.note = `Refunded via PayPal: ${data.paypalRefundId}`;
-        const formData = new FormData();
-        formData.append("body", JSON.stringify({ ...payload, mode: "refund" }));
-        fetcher.submit(formData, { method: "POST" });
-
-      } catch (err) {
-        alert("❌ PayPal refund error: " + err.message);
-        return;
-      }
-    } else if (paymentMode === 'stripe') {
-      try {
-        const res = await fetch("https://phpstack-1419716-5486887.cloudwaysapps.com/stripe-refund", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ chargeId: transactionId, amount })
-        });
-
-        const data = await res.json();
-        if (!data.success) {
-          alert("❌ Stripe refund failed: " + data.message);
-          return;
-        }
-
-        const payload = preparePayload();
-        payload.variables.input.note = `Refunded via Stripe: ${data.stripeRefundId}`;
-        const formData = new FormData();
-        formData.append("body", JSON.stringify({ ...payload, mode: "refund" }));
-        fetcher.submit(formData, { method: "POST" });
-
-      } catch (err) {
-        alert("❌ Stripe refund error: " + err.message);
-        return;
-      }
-    } else {
-      const formData = new FormData();
-      formData.append("body", JSON.stringify({ ...preparePayload(), mode: "refund" }));
-      fetcher.submit(formData, { method: "POST" });
+      const res = await fetch("https://phpstack-1419716-5486887.cloudwaysapps.com/paypal-refund", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ transactionId, amount }),
+      });
+      const data = await res.json();
+      if (!data.success) return alert("❌ PayPal refund failed: " + data.message);
+      payload.variables.input.note = `Refunded via PayPal: ${data.paypalRefundId}`;
     }
+
+    if (paymentMode === 'stripe') {
+      const res = await fetch("https://phpstack-1419716-5486887.cloudwaysapps.com/stripe-refund", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chargeId: transactionId, amount })
+      });
+      const data = await res.json();
+      if (!data.success) return alert("❌ Stripe refund failed: " + data.message);
+      payload.variables.input.note = `Refunded via Stripe: ${data.stripeRefundId}`;
+    }
+
+    const formData = new FormData();
+    formData.append("body", JSON.stringify({ ...payload, mode: "refund" }));
+    fetcher.submit(formData, { method: "POST" });
 
     setTimeout(() => {
       alert(`\n✅ Refund Successful!\n\nAmount: $${amount}\nTxn: ${refundMeta.transaction_id}`);
@@ -332,119 +333,136 @@ export default function RefundPage() {
         {selectedOrder ? (
           <>
             <Button onClick={goBack}>&larr; Back to Order List</Button>
-            <Grid>
-              <Grid.Cell columnSpan={{ xs: 6, sm: 8 }}>
-                <Card>
-                  <Text variant="headingMd">Order Line Items</Text>
-                  {selectedOrder.lineItems.map(item => {
-                    const existing = selectedProducts.find(p => p.id === item.id);
-                    const selectedQuantity = existing?.quantity || 0;
 
-                    return (
-                      <Box key={item.id} display="flex" alignItems="center" paddingBlock="300">
-                        <Thumbnail
-                          source={item.image?.originalSrc || "https://cdn.shopify.com/s/files/1/0752/6435/6351/files/no-image-icon.png"}
-                          alt={item.image?.altText || "Product image"}
-                          size="small"
-                        />
-                        <Box paddingInlineStart="300" flexGrow={1}>
-                          <Text fontWeight="bold">{item.title}</Text>
-                          <Text variant="bodySm">{item.sku}</Text>
-                          <Text variant="bodySm">
-                            ${item.discountedUnitPriceSet.shopMoney.amount} × {item.quantity}
-                          </Text>
-                        </Box>
-                        <input
-                          type="number"
-                          min="0"
-                          max={item.quantity}
-                          value={selectedQuantity}
-                          onChange={(e) => {
-                            const qty = parseInt(e.target.value) || 0;
-                            setSelectedProducts(prev => {
-                              const withoutThis = prev.filter(p => p.id !== item.id);
-                              if (qty > 0) {
-                                return [...withoutThis, {
-                                  id: item.id,
-                                  title: item.title,
-                                  quantity: qty,
-                                  price: item.discountedUnitPriceSet.shopMoney.amount
-                                }];
-                              } else {
-                                return withoutThis;
-                              }
-                            });
-                          }}
-                          style={{ width: "50px", marginLeft: "10px" }}
-                        />
-                      </Box>
-                    );
-                  })}
-                </Card>
+            {/* ✅ Refunded Items Section */}
+            {refundedItems?.length > 0 && (
+              <Card title="Refunded Items" sectioned>
+                {refundedItems.map((item, idx) => (
+                  <Box key={idx} paddingBlock="200" display="flex" justifyContent="space-between">
+                    <Box>
+                      <Text fontWeight="bold">{item.title}</Text>
+                      <Text variant="bodySm">SKU: {item.sku}</Text>
+                    </Box>
+                    <Box>
+                      <Text>Qty Refunded: {item.quantity_refunded}</Text>
+                      <Text color="critical">Refunded</Text>
+                    </Box>
+                  </Box>
+                ))}
+              </Card>
+            )}
 
-                <Card title="Refund Shipping" sectioned>
-                  <Box display="flex" alignItems="center" gap="300">
-                    <input
-                      type="checkbox"
-                      checked={shippingRefundSelected}
-                      onChange={e => setShippingRefundSelected(e.target.checked)}
+            {/* ✅ Product Line Items for Refund */}
+            <Card>
+              <Text variant="headingMd">Order Line Items</Text>
+              {selectedOrder.lineItems.map(item => {
+                const existing = selectedProducts.find(p => p.id === item.id);
+                const selectedQuantity = existing?.quantity || 0;
+
+                return (
+                  <Box key={item.id} display="flex" alignItems="center" paddingBlock="300">
+                    <Thumbnail
+                      source={item.image?.originalSrc || "https://cdn.shopify.com/s/files/1/0752/6435/6351/files/no-image-icon.png"}
+                      alt={item.image?.altText || "Product image"}
+                      size="small"
                     />
-                    <Text>Freight - ${shippingRefundAmount}</Text>
+                    <Box paddingInlineStart="300" flexGrow={1}>
+                      <Text fontWeight="bold">{item.title}</Text>
+                      <Text variant="bodySm">{item.sku}</Text>
+                      <Text variant="bodySm">
+                        ${item.discountedUnitPriceSet.shopMoney.amount} × {item.quantity}
+                      </Text>
+                    </Box>
                     <input
-                      type="text"
-                      disabled={!shippingRefundSelected}
-                      value={shippingRefundAmount}
-                      onChange={e => setShippingRefundAmount(e.target.value)}
-                      style={{ marginLeft: "auto", width: 100, padding: 5 }}
+                      type="number"
+                      min="0"
+                      max={item.quantity}
+                      value={selectedQuantity}
+                      onChange={(e) => {
+                        const qty = parseInt(e.target.value) || 0;
+                        setSelectedProducts(prev => {
+                          const withoutThis = prev.filter(p => p.id !== item.id);
+                          if (qty > 0) {
+                            return [...withoutThis, {
+                              id: item.id,
+                              title: item.title,
+                              quantity: qty,
+                              price: item.discountedUnitPriceSet.shopMoney.amount
+                            }];
+                          } else {
+                            return withoutThis;
+                          }
+                        });
+                      }}
+                      style={{ width: "50px", marginLeft: "10px" }}
                     />
                   </Box>
-                </Card>
+                );
+              })}
+            </Card>
 
-                <Card title="Reason for Refund" sectioned>
-                  <TextField
-                    value={reasonForRefund}
-                    onChange={setReasonForRefund}
-                    multiline={2}
-                    placeholder="Only you and staff can see this reason"
-                  />
-                </Card>
-              </Grid.Cell>
+            {/* ✅ Shipping Refund Box */}
+            <Card title="Refund Shipping" sectioned>
+              <Box display="flex" alignItems="center" gap="300">
+                <input
+                  type="checkbox"
+                  checked={shippingRefundSelected}
+                  onChange={e => setShippingRefundSelected(e.target.checked)}
+                />
+                <Text>Freight - ${shippingRefundAmount}</Text>
+                <input
+                  type="text"
+                  disabled={!shippingRefundSelected}
+                  value={shippingRefundAmount}
+                  onChange={e => setShippingRefundAmount(e.target.value)}
+                  style={{ marginLeft: "auto", width: 100, padding: 5 }}
+                />
+              </Box>
+            </Card>
 
-              <Grid.Cell columnSpan={{ xs: 6, sm: 4 }}>
-                <Card title="Summary" sectioned>
-                  <Box display="flex" justifyContent="space-between">
-                    <Text>Item subtotal</Text>
-                    <Text>${productSubtotal.toFixed(2)}</Text>
-                  </Box>
-                  <Box display="flex" justifyContent="space-between" paddingBlockStart="100">
-                    <Text>Tax</Text>
-                    <Text>${taxAmount.toFixed(2)}</Text>
-                  </Box>
-                  <Box display="flex" justifyContent="space-between" paddingBlockStart="100">
-                    <Text>Shipping</Text>
-                    <Text>${shippingRefundValue.toFixed(2)}</Text>
-                  </Box>
-                  <Box display="flex" justifyContent="space-between" paddingBlockStart="300">
-                    <Text fontWeight="bold">Refund total</Text>
-                    <Text fontWeight="bold">${refundTotal.toFixed(2)}</Text>
-                  </Box>
+            {/* ✅ Reason */}
+            <Card title="Reason for Refund" sectioned>
+              <TextField
+                value={reasonForRefund}
+                onChange={setReasonForRefund}
+                multiline={2}
+                placeholder="Only you and staff can see this reason"
+              />
+            </Card>
 
-                  <Box paddingBlockStart="200">
-                    <Button fullWidth variant="secondary" onClick={handleCalculateRefund} disabled={selectedProducts.length === 0}>
-                      Calculate Refund
-                    </Button>
-                  </Box>
+            {/* ✅ Summary Box */}
+            <Card title="Summary" sectioned>
+              <Box display="flex" justifyContent="space-between">
+                <Text>Item subtotal</Text>
+                <Text>${productSubtotal.toFixed(2)}</Text>
+              </Box>
+              <Box display="flex" justifyContent="space-between" paddingBlockStart="100">
+                <Text>Tax</Text>
+                <Text>${taxAmount.toFixed(2)}</Text>
+              </Box>
+              <Box display="flex" justifyContent="space-between" paddingBlockStart="100">
+                <Text>Shipping</Text>
+                <Text>${shippingRefundValue.toFixed(2)}</Text>
+              </Box>
+              <Box display="flex" justifyContent="space-between" paddingBlockStart="300">
+                <Text fontWeight="bold">Refund total</Text>
+                <Text fontWeight="bold">${refundTotal.toFixed(2)}</Text>
+              </Box>
 
-                  <Box paddingBlockStart="300">
-                    <Button fullWidth variant="primary" onClick={handleRefund} disabled={!refundMeta || selectedProducts.length === 0}>
-                      {refundMeta
-                        ? `Refund $${refundMeta.amount} (TX: ${refundMeta.transaction_id})`
-                        : `Refund $${refundTotal.toFixed(2)}`}
-                    </Button>
-                  </Box>
-                </Card>
-              </Grid.Cell>
-            </Grid>
+              <Box paddingBlockStart="200">
+                <Button fullWidth variant="secondary" onClick={handleCalculateRefund} disabled={selectedProducts.length === 0}>
+                  Calculate Refund
+                </Button>
+              </Box>
+
+              <Box paddingBlockStart="300">
+                <Button fullWidth variant="primary" onClick={handleRefund} disabled={!refundMeta || selectedProducts.length === 0}>
+                  {refundMeta
+                    ? `Refund $${refundMeta.amount} (TX: ${refundMeta.transaction_id})`
+                    : `Refund $${refundTotal.toFixed(2)}`}
+                </Button>
+              </Box>
+            </Card>
           </>
         ) : (
           <Layout.Section>
@@ -473,9 +491,6 @@ export default function RefundPage() {
                   { title: "Date" },
                   { title: "Total" },
                   { title: "Payment Status" },
-                  // { title: "Transaction ID" },
-                  // { title: "Gateway" },
-                  // { title: "Location ID" }
                 ]}
               >
                 {orders.map((order, index) => (
@@ -490,9 +505,6 @@ export default function RefundPage() {
                     <IndexTable.Cell>{new Date(order.createdAt).toLocaleString()}</IndexTable.Cell>
                     <IndexTable.Cell>{order.totalPriceSet.shopMoney.amount} {order.totalPriceSet.shopMoney.currencyCode}</IndexTable.Cell>
                     <IndexTable.Cell>{order.displayFinancialStatus || "Unknown"}</IndexTable.Cell>
-                    {/* <IndexTable.Cell>{order.transactionId || "N/A"}</IndexTable.Cell> */}
-                    {/* <IndexTable.Cell>{order.gateway || "manual"}</IndexTable.Cell> */}
-                    {/* <IndexTable.Cell>{order.locationId || "70116966605"}</IndexTable.Cell> */}
                   </IndexTable.Row>
                 ))}
               </IndexTable>
@@ -512,6 +524,7 @@ export default function RefundPage() {
     </Page>
   );
 }
+
 
 
 
