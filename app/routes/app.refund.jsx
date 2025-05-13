@@ -1,4 +1,3 @@
-// ✅ Part 1 — LOADER and ACTION Logic (app/routes/app.refund.jsx)
 import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 
@@ -109,15 +108,22 @@ export const loader = async ({ request }) => {
   const paginatedOrders = filteredOrders.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const selectedOrder = selectedOrderId ? allOrders.find(o => o.id === selectedOrderId) : null;
 
-  // ✅ Fetch Refunded Products if selectedOrderId exists
+  // ✅ Fetch refunded data if order selected
   let refundedItems = [];
-  if (selectedOrderId) {
+  let refundedQtyMap = {};
+  let refundedShippingAmount = 0;
+
+  if (selectedOrderId && selectedOrder) {
     try {
-      const res = await fetch(`https://phpstack-1419716-5486887.cloudwaysapps.com/refunded-products/${selectedOrder.orderId}`);
-      const result = await res.json();
-      refundedItems = result.refundedItems || [];
+      const response = await fetch(
+        `https://phpstack-1419716-5486887.cloudwaysapps.com/refunded-products/${selectedOrder.orderId}`
+      );
+      const data = await response.json();
+      refundedItems = data.refundedItems || [];
+      refundedQtyMap = data.refundedQtyMap || {};
+      refundedShippingAmount = data.refundedShippingAmount || 0;
     } catch (err) {
-      console.error("❌ Refunded products fetch failed:", err);
+      console.error("❌ Error loading refunded items:", err.message);
     }
   }
 
@@ -127,6 +133,8 @@ export const loader = async ({ request }) => {
     page,
     selectedOrder,
     refundedItems,
+    refundedQtyMap,
+    refundedShippingAmount,
   });
 };
 
@@ -148,12 +156,14 @@ export const action = async ({ request }) => {
         currency: "AUD",
         notify: input.notifyCustomer,
         note: input.note || "Refund via app",
-        transactions: isCalculation ? undefined : [{
-          parent_id: input.transactionId,
-          amount: input.totalAmount,
-          kind: "refund",
-          gateway: input.gateway,
-        }],
+        transactions: isCalculation ? undefined : [
+          {
+            parent_id: input.transactionId,
+            amount: input.totalAmount,
+            kind: "refund",
+            gateway: input.gateway,
+          }
+        ],
       }
     };
 
@@ -168,7 +178,7 @@ export const action = async ({ request }) => {
     });
 
     const result = await res.json();
-    if (!res.ok) throw new Error(result.error || "Failed");
+    if (!res.ok) throw new Error(result.error || "Refund failed");
     return json(result);
   } catch (err) {
     console.error("❌ Refund Error:", err);
@@ -180,7 +190,7 @@ export const action = async ({ request }) => {
 
 
 
-// ✅ app/routes/app.refund.jsx — FULL UI EXPORT DEFAULT COMPONENT
+
 import {
   Page, Layout, Card, Text, Box, Button, TextField,
   IndexTable, Pagination, Thumbnail, Grid
@@ -189,7 +199,11 @@ import { useLoaderData, useSearchParams, useFetcher } from "@remix-run/react";
 import { useState, useEffect } from "react";
 
 export default function RefundPage() {
-  const { orders, total, page, selectedOrder, refundedItems } = useLoaderData();
+  const {
+    orders, total, page, selectedOrder,
+    refundedItems, refundedQtyMap, refundedShippingAmount
+  } = useLoaderData();
+
   const [searchParams, setSearchParams] = useSearchParams();
   const [selectedProducts, setSelectedProducts] = useState([]);
   const [shippingRefundSelected, setShippingRefundSelected] = useState(false);
@@ -202,10 +216,12 @@ export default function RefundPage() {
 
   const totalPages = Math.ceil(total / 25);
 
-  // ✅ Fix: Load shipping amount on first mount (even before refresh)
+  // Load actual shipping price on mount
   useEffect(() => {
     if (selectedOrder?.shippingLines?.edges?.[0]?.node?.originalPriceSet?.shopMoney?.amount) {
-      setShippingRefundAmount(selectedOrder.shippingLines.edges[0].node.originalPriceSet.shopMoney.amount);
+      const originalShipping = parseFloat(selectedOrder.shippingLines.edges[0].node.originalPriceSet.shopMoney.amount);
+      const remaining = Math.max(0, originalShipping - refundedShippingAmount);
+      setShippingRefundAmount(remaining.toFixed(2));
     }
   }, [selectedOrder]);
 
@@ -275,7 +291,6 @@ export default function RefundPage() {
     if (selectedProducts.length === 0 || !refundMeta) return;
 
     const { metafields } = selectedOrder;
-
     const summary = `\n🧾 Refund Summary:\n\n` +
       selectedProducts.map(p => `• ${p.title} (Qty: ${p.quantity} × $${p.price})`).join("\n") +
       (shippingRefundSelected ? `\n• Shipping: $${parseFloat(shippingRefundAmount).toFixed(2)}` : "") +
@@ -286,19 +301,16 @@ export default function RefundPage() {
       `• Txn ID: ${metafields?.transaction_id_number || "N/A"}` +
       `\n\nClick OK to continue with the refund.`;
 
-    const confirmRefund = window.confirm(summary);
-    if (!confirmRefund) return;
+    if (!window.confirm(summary)) return;
 
     const paymentMode = metafields?.payment_mode?.toLowerCase();
     const transactionId = metafields?.transaction_id_number;
     const amount = refundMeta.amount;
-
     const payload = preparePayload();
 
     if (paymentMode === 'paypal') {
       const res = await fetch("https://phpstack-1419716-5486887.cloudwaysapps.com/paypal-refund", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ transactionId, amount }),
       });
       const data = await res.json();
@@ -308,9 +320,8 @@ export default function RefundPage() {
 
     if (paymentMode === 'stripe') {
       const res = await fetch("https://phpstack-1419716-5486887.cloudwaysapps.com/stripe-refund", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chargeId: transactionId, amount })
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chargeId: transactionId, amount }),
       });
       const data = await res.json();
       if (!data.success) return alert("❌ Stripe refund failed: " + data.message);
@@ -322,7 +333,7 @@ export default function RefundPage() {
     fetcher.submit(formData, { method: "POST" });
 
     setTimeout(() => {
-      alert(`\n✅ Refund Successful!\n\nAmount: $${amount}\nTxn: ${refundMeta.transaction_id}`);
+      alert(`\n✅ Refund Successful!\nAmount: $${amount}\nTxn: ${refundMeta.transaction_id}`);
       goBack();
     }, 800);
   };
@@ -334,8 +345,8 @@ export default function RefundPage() {
           <>
             <Button onClick={goBack}>&larr; Back to Order List</Button>
 
-            {/* ✅ Refunded Items Section */}
-            {refundedItems?.length > 0 && (
+            {/* ✅ Refunded Items */}
+            {(refundedItems?.length > 0 || refundedShippingAmount > 0) && (
               <Card title="Refunded Items" sectioned>
                 {refundedItems.map((item, idx) => (
                   <Box key={idx} paddingBlock="200" display="flex" justifyContent="space-between">
@@ -349,13 +360,27 @@ export default function RefundPage() {
                     </Box>
                   </Box>
                 ))}
+                {refundedShippingAmount > 0 && (
+                  <Box paddingBlock="200" display="flex" justifyContent="space-between">
+                    <Box>
+                      <Text fontWeight="bold">Shipping</Text>
+                    </Box>
+                    <Box>
+                      <Text>Refunded: ${refundedShippingAmount.toFixed(2)}</Text>
+                      <Text color="critical">Refunded</Text>
+                    </Box>
+                  </Box>
+                )}
               </Card>
             )}
 
-            {/* ✅ Product Line Items for Refund */}
+            {/* ✅ Refundable Line Items */}
             <Card>
               <Text variant="headingMd">Order Line Items</Text>
               {selectedOrder.lineItems.map(item => {
+                const maxQty = item.quantity - (parseInt(refundedQtyMap[item.id]) || 0);
+                if (maxQty <= 0) return null;
+
                 const existing = selectedProducts.find(p => p.id === item.id);
                 const selectedQuantity = existing?.quantity || 0;
 
@@ -376,7 +401,7 @@ export default function RefundPage() {
                     <input
                       type="number"
                       min="0"
-                      max={item.quantity}
+                      max={maxQty}
                       value={selectedQuantity}
                       onChange={(e) => {
                         const qty = parseInt(e.target.value) || 0;
@@ -401,7 +426,7 @@ export default function RefundPage() {
               })}
             </Card>
 
-            {/* ✅ Shipping Refund Box */}
+            {/* ✅ Shipping Refund */}
             <Card title="Refund Shipping" sectioned>
               <Box display="flex" alignItems="center" gap="300">
                 <input
@@ -420,7 +445,7 @@ export default function RefundPage() {
               </Box>
             </Card>
 
-            {/* ✅ Reason */}
+            {/* ✅ Reason + Summary */}
             <Card title="Reason for Refund" sectioned>
               <TextField
                 value={reasonForRefund}
@@ -430,7 +455,6 @@ export default function RefundPage() {
               />
             </Card>
 
-            {/* ✅ Summary Box */}
             <Card title="Summary" sectioned>
               <Box display="flex" justifyContent="space-between">
                 <Text>Item subtotal</Text>
@@ -524,6 +548,7 @@ export default function RefundPage() {
     </Page>
   );
 }
+
 
 
 
