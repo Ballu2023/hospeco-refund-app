@@ -1,3 +1,4 @@
+// ✅ PART 1: COMPLETE LOGIC CODE (app/routes/app.refund.jsx)
 import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 
@@ -32,7 +33,7 @@ export const loader = async ({ request }) => {
                   }
                 }
               }
-              lineItems(first: 50) {
+              lineItems(first: 20) {
                 edges {
                   node {
                     id title quantity sku
@@ -41,7 +42,7 @@ export const loader = async ({ request }) => {
                   }
                 }
               }
-              metafields(first: 20, namespace: "custom") {
+              metafields(first: 10, namespace: "custom") {
                 edges {
                   node {
                     key value
@@ -79,18 +80,17 @@ export const loader = async ({ request }) => {
           metafields[node.key] = node.value;
         });
 
-        const refundMap = metafields?.refund_quantity_map ? JSON.parse(metafields.refund_quantity_map) : {};
+        // Parse refund map
+        const refundMap = metafields["refund_quantity_map"] ? JSON.parse(metafields["refund_quantity_map"]) : {};
 
-        const lineItems = node.lineItems.edges.map(({ node }) => {
-          const refundedQty = refundMap[node.id] || 0;
+        const lineItems = node.lineItems.edges.map(({ node: item }) => {
+          const refundedQuantity = refundMap[item.id] || 0;
           return {
-            ...node,
-            refundedQuantity: refundedQty,
-            remainingQuantity: node.quantity - refundedQty
+            ...item,
+            refundedQuantity,
+            remainingQuantity: item.quantity - refundedQuantity
           };
         });
-
-        const fullyRefunded = lineItems.every(item => item.remainingQuantity <= 0);
 
         allOrders.push({
           ...node,
@@ -101,7 +101,7 @@ export const loader = async ({ request }) => {
           gateway,
           locationId,
           metafields,
-          fullyRefunded
+          fullyRefunded: lineItems.every(li => li.remainingQuantity <= 0)
         });
       }
     }
@@ -142,12 +142,14 @@ export const action = async ({ request }) => {
         currency: "AUD",
         notify: input.notifyCustomer,
         note: input.note || "Refund via app",
-        transactions: isCalculation ? undefined : [{
-          parent_id: input.transactionId,
-          amount: input.totalAmount,
-          kind: "refund",
-          gateway: input.gateway,
-        }],
+        transactions: isCalculation ? undefined : [
+          {
+            parent_id: input.transactionId,
+            amount: input.totalAmount,
+            kind: "refund",
+            gateway: input.gateway,
+          }
+        ]
       }
     };
 
@@ -158,12 +160,13 @@ export const action = async ({ request }) => {
     const res = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ orderId, payload }),
+      body: JSON.stringify({ orderId, payload })
     });
 
     const result = await res.json();
-    if (!res.ok) throw new Error(result.error || "Refund failed.");
+    if (!res.ok) throw new Error(result.error || "Refund failed");
     return json(result);
+
   } catch (err) {
     console.error("❌ Refund Error:", err);
     return json({ error: "Refund failed." }, { status: 500 });
@@ -176,7 +179,7 @@ export const action = async ({ request }) => {
 
 
 
-// ✅ PART 2: FINAL UI – Full Component Code with Stripe & PayPal Support
+// ✅ PART 2: COMPLETE UI CODE FOR REFUND PAGE (FULL Remix Component)
 import {
   Page, Layout, Card, Text, Box, Button, TextField,
   IndexTable, Pagination, Thumbnail, Grid
@@ -193,6 +196,7 @@ export default function RefundPage() {
   const [reasonForRefund, setReasonForRefund] = useState("");
   const [emailCustomer, setEmailCustomer] = useState(true);
   const [refundMeta, setRefundMeta] = useState(null);
+  const [filter, setFilter] = useState("");
   const fetcher = useFetcher();
   const hasInitialized = useRef(false);
 
@@ -224,7 +228,6 @@ export default function RefundPage() {
   }, [selectedProducts, shippingRefundSelected]);
 
   useEffect(() => {
-    console.log("🧾 fetcher.data response:", fetcher.data);
     if (fetcher.data?.transactionId && fetcher.data?.amount) {
       setRefundMeta({
         transaction_id: fetcher.data.transactionId,
@@ -277,7 +280,6 @@ export default function RefundPage() {
 
   const handleRefund = async () => {
     if (selectedProducts.length === 0 || !refundMeta) return alert("No products selected for refund");
-
     const { metafields } = selectedOrder;
     const paymentMode = metafields?.payment_mode?.toLowerCase();
     const transactionId = metafields?.transaction_id_number;
@@ -295,6 +297,8 @@ export default function RefundPage() {
 
     if (!window.confirm(summary)) return;
 
+    let note = reasonForRefund;
+
     if (paymentMode === 'paypal') {
       try {
         const res = await fetch("http://localhost:4000/paypal-refund", {
@@ -304,17 +308,10 @@ export default function RefundPage() {
         });
         const data = await res.json();
         if (!data.success) return alert("❌ PayPal refund failed: " + data.message);
-
-        const payload = preparePayload();
-        payload.variables.input.note = `Refunded via PayPal: ${data.paypalRefundId}`;
-        const formData = new FormData();
-        formData.append("body", JSON.stringify({ ...payload, mode: "refund" }));
-        fetcher.submit(formData, { method: "POST" });
-
+        note = `Refunded via PayPal: ${data.paypalRefundId}`;
       } catch (err) {
         return alert("❌ PayPal refund error: " + err.message);
       }
-
     } else if (paymentMode === 'stripe') {
       try {
         const res = await fetch("http://localhost:4000/stripe-refund", {
@@ -324,22 +321,17 @@ export default function RefundPage() {
         });
         const data = await res.json();
         if (!data.success) return alert("❌ Stripe refund failed: " + data.message);
-
-        const payload = preparePayload();
-        payload.variables.input.note = `Refunded via Stripe: ${data.stripeRefundId}`;
-        const formData = new FormData();
-        formData.append("body", JSON.stringify({ ...payload, mode: "refund" }));
-        fetcher.submit(formData, { method: "POST" });
-
+        note = `Refunded via Stripe: ${data.stripeRefundId}`;
       } catch (err) {
         return alert("❌ Stripe refund error: " + err.message);
       }
-
-    } else {
-      const formData = new FormData();
-      formData.append("body", JSON.stringify({ ...preparePayload(), mode: "refund" }));
-      fetcher.submit(formData, { method: "POST" });
     }
+
+    const formData = new FormData();
+    const payload = preparePayload();
+    payload.variables.input.note = note;
+    formData.append("body", JSON.stringify({ ...payload, mode: "refund" }));
+    fetcher.submit(formData, { method: "POST" });
 
     setTimeout(() => {
       alert(`\n✅ Refund Successful!\n\nAmount: $${amount}\nTxn: ${refundMeta.transaction_id}`);
