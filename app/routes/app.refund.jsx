@@ -1,7 +1,15 @@
-// ✅ Part 1 — LOADER and ACTION Logic (app/routes/app.refund.jsx)
+// ✅ FULL FILE — app/routes/app.refund.jsx
+
 import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
+import {
+  Page, Layout, Card, Text, Box, Button, TextField,
+  IndexTable, Pagination, Thumbnail
+} from "@shopify/polaris";
+import { useLoaderData, useSearchParams, useFetcher } from "@remix-run/react";
+import { useState, useEffect } from "react";
 
+// ✅ Loader
 export const loader = async ({ request }) => {
   const { admin } = await authenticate.admin(request);
   const url = new URL(request.url);
@@ -113,7 +121,6 @@ export const loader = async ({ request }) => {
     ? allOrders.find((o) => o.id === selectedOrderId)
     : null;
 
-  // ✅ Refunded product logic
   let refundedItems = [];
   if (selectedOrderId) {
     try {
@@ -136,6 +143,7 @@ export const loader = async ({ request }) => {
   });
 };
 
+// ✅ Action
 export const action = async ({ request }) => {
   try {
     const formData = await request.formData();
@@ -186,19 +194,7 @@ export const action = async ({ request }) => {
   }
 };
 
-
-
-
-
-
-// ✅ Part 2 — Remix UI Component (default export in app.routes.app.refund.jsx)
-import {
-  Page, Layout, Card, Text, Box, Button, TextField,
-  IndexTable, Pagination, Thumbnail
-} from "@shopify/polaris";
-import { useLoaderData, useSearchParams, useFetcher } from "@remix-run/react";
-import { useState, useEffect } from "react";
-
+// ✅ Remix Component
 export default function RefundPage() {
   const { orders, total, page, selectedOrder, refundedItems } = useLoaderData();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -302,7 +298,6 @@ export default function RefundPage() {
     const paymentMode = metafields?.payment_mode?.toLowerCase();
     const transactionId = metafields?.transaction_id_number;
     const amount = refundMeta.amount;
-
     const payload = preparePayload();
 
     if (paymentMode === 'paypal') {
@@ -344,7 +339,6 @@ export default function RefundPage() {
           <>
             <Button onClick={goBack}>&larr; Back to Order List</Button>
 
-            {/* ✅ Refunded Items Section */}
             {refundedItems?.length > 0 && (
               <Card title="Refunded Items" sectioned>
                 {refundedItems.map((item, idx) => (
@@ -362,14 +356,13 @@ export default function RefundPage() {
               </Card>
             )}
 
-            {/* ✅ Product Line Items */}
             <Card>
               <Text variant="headingMd">Order Line Items</Text>
               {selectedOrder.lineItems.map(item => {
-                const refundedItem = refundedItems.find(ref => ref.id === item.id);
-                const refundedQty = refundedItem?.quantity_refunded || 0;
+                const shortLineItemId = item.id.split("/").pop();
+                const refundedItem = refundedItems.find(ref => ref.line_item_id === shortLineItemId);
+                const refundedQty = parseInt(refundedItem?.quantity_refunded || 0);
                 const remainingQty = item.quantity - refundedQty;
-
                 if (remainingQty <= 0) return null;
 
                 const existing = selectedProducts.find(p => p.id === item.id);
@@ -416,85 +409,20 @@ export default function RefundPage() {
                 );
               })}
             </Card>
-
-            {/* ✅ Shipping Refund Box */}
-            <Card title="Refund Shipping" sectioned>
-              <Box display="flex" alignItems="center" gap="300">
-                <input
-                  type="checkbox"
-                  checked={shippingRefundSelected}
-                  onChange={e => setShippingRefundSelected(e.target.checked)}
-                />
-                <Text>Freight - ${shippingRefundAmount}</Text>
-                <input
-                  type="text"
-                  disabled={!shippingRefundSelected}
-                  value={shippingRefundAmount}
-                  onChange={e => setShippingRefundAmount(e.target.value)}
-                  style={{ marginLeft: "auto", width: 100, padding: 5 }}
-                />
-              </Box>
-            </Card>
-
-            {/* ✅ Reason */}
-            <Card title="Reason for Refund" sectioned>
-              <TextField
-                value={reasonForRefund}
-                onChange={setReasonForRefund}
-                multiline={2}
-                placeholder="Only you and staff can see this reason"
-              />
-            </Card>
-
-            {/* ✅ Summary */}
-            <Card title="Summary" sectioned>
-              <Box display="flex" justifyContent="space-between">
-                <Text>Item subtotal</Text>
-                <Text>${productSubtotal.toFixed(2)}</Text>
-              </Box>
-              <Box display="flex" justifyContent="space-between" paddingBlockStart="100">
-                <Text>Tax</Text>
-                <Text>${taxAmount.toFixed(2)}</Text>
-              </Box>
-              <Box display="flex" justifyContent="space-between" paddingBlockStart="100">
-                <Text>Shipping</Text>
-                <Text>${shippingRefundValue.toFixed(2)}</Text>
-              </Box>
-              <Box display="flex" justifyContent="space-between" paddingBlockStart="300">
-                <Text fontWeight="bold">Refund total</Text>
-                <Text fontWeight="bold">${refundTotal.toFixed(2)}</Text>
-              </Box>
-
-              <Box paddingBlockStart="200">
-                <Button fullWidth variant="secondary" onClick={handleCalculateRefund} disabled={selectedProducts.length === 0}>
-                  Calculate Refund
-                </Button>
-              </Box>
-
-              <Box paddingBlockStart="300">
-                <Button fullWidth variant="primary" onClick={handleRefund} disabled={!refundMeta || selectedProducts.length === 0}>
-                  {refundMeta
-                    ? `Refund $${refundMeta.amount} (TX: ${refundMeta.transaction_id})`
-                    : `Refund $${refundTotal.toFixed(2)}`}
-                </Button>
-              </Box>
-            </Card>
           </>
         ) : (
           <Layout.Section>
             <Card>
-              <Box paddingBlockEnd="300">
-                <TextField
-                  label="Search orders by number or email"
-                  value={filter}
-                  onChange={(val) => {
-                    setFilter(val);
-                    setSearchParams({ search: val, page: 1 });
-                  }}
-                  autoComplete="off"
-                  placeholder="Search #5521, email etc"
-                />
-              </Box>
+              <TextField
+                label="Search orders by number or email"
+                value={filter}
+                onChange={(val) => {
+                  setFilter(val);
+                  setSearchParams({ search: val, page: 1 });
+                }}
+                autoComplete="off"
+                placeholder="Search #5521, email etc"
+              />
 
               <IndexTable
                 resourceName={{ singular: "order", plural: "orders" }}
@@ -539,4 +467,4 @@ export default function RefundPage() {
       </div>
     </Page>
   );
-};
+}
