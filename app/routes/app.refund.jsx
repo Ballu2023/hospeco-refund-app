@@ -1,4 +1,4 @@
-// app/routes/app.refund.jsx
+// ✅ PART 1: LOGIC FILE - app/routes/app.refund.jsx
 import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 
@@ -138,7 +138,9 @@ export const action = async ({ request }) => {
       }
     };
 
-    const endpoint = isCalculation ? "https://phpstack-1419716-5486887.cloudwaysapps.com/calculate" : "https://phpstack-1419716-5486887.cloudwaysapps.com/refund";
+    const endpoint = isCalculation
+      ? "https://phpstack-1419716-5486887.cloudwaysapps.com/calculate"
+      : "https://phpstack-1419716-5486887.cloudwaysapps.com/refund";
 
     const res = await fetch(endpoint, {
       method: "POST",
@@ -159,6 +161,10 @@ export const action = async ({ request }) => {
 
 
 
+// ✅ PART 2: UI FILE - Updated RefundPage component (React + Polaris)
+// Entire component should replace existing RefundPage
+// Make sure to import necessary components and hooks at the top
+
 import {
   Page, Layout, Card, Text, Box, Button, TextField,
   IndexTable, Pagination, Thumbnail, Grid
@@ -171,25 +177,20 @@ export default function RefundPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [selectedProducts, setSelectedProducts] = useState([]);
   const [shippingRefundSelected, setShippingRefundSelected] = useState(false);
-  const [shippingRefundAmount, setShippingRefundAmount] = useState(
-    selectedOrder?.shippingLines?.edges?.[0]?.node?.originalPriceSet?.shopMoney?.amount || "0.00"
-  );
+  const [shippingRefundAmount, setShippingRefundAmount] = useState("0.00");
   const [reasonForRefund, setReasonForRefund] = useState("");
   const [emailCustomer, setEmailCustomer] = useState(true);
   const [refundMeta, setRefundMeta] = useState(null);
+  const [refundedItems, setRefundedItems] = useState({});
   const [filter, setFilter] = useState("");
   const fetcher = useFetcher();
 
-  const totalPages = Math.ceil(total / 25);
-
   useEffect(() => {
-    if (fetcher.data?.transactionId && fetcher.data?.amount) {
-      setRefundMeta({
-        transaction_id: fetcher.data.transactionId,
-        amount: fetcher.data.amount
-      });
-    }
-  }, [fetcher.data]);
+    const newShippingAmount = selectedOrder?.shippingLines?.edges?.[0]?.node?.originalPriceSet?.shopMoney?.amount || "0.00";
+    setShippingRefundAmount(newShippingAmount);
+  }, [selectedOrder]);
+
+  const totalPages = Math.ceil(total / 25);
 
   const updatePage = (newPage) => {
     const params = new URLSearchParams(searchParams);
@@ -208,6 +209,27 @@ export default function RefundPage() {
     params.delete("orderId");
     setSearchParams(params);
   };
+
+  const updateRefundedQuantities = (lineItemId, quantity) => {
+    setRefundedItems(prev => ({
+      ...prev,
+      [lineItemId]: (prev[lineItemId] || 0) + quantity,
+    }));
+  };
+
+  const markItemsAsRefunded = () => {
+    selectedProducts.forEach(item => {
+      updateRefundedQuantities(item.id, item.quantity);
+    });
+  };
+
+  const refundedItemsList = selectedOrder?.lineItems?.filter(item =>
+    (refundedItems[item.id] || 0) >= item.quantity
+  ) || [];
+
+  const availableForRefundList = selectedOrder?.lineItems?.filter(item =>
+    (refundedItems[item.id] || 0) < item.quantity
+  ) || [];
 
   const productSubtotal = selectedProducts.reduce(
     (sum, item) => sum + (parseFloat(item.price) * item.quantity), 0
@@ -246,7 +268,6 @@ export default function RefundPage() {
 
   const handleRefund = async () => {
     if (selectedProducts.length === 0 || !refundMeta) return;
-
     const { metafields } = selectedOrder;
 
     const summary = `\n🧾 Refund Summary:\n\n` +
@@ -267,58 +288,48 @@ export default function RefundPage() {
     const amount = refundMeta.amount;
 
     if (paymentMode === 'paypal') {
-      try {
-        const res = await fetch("https://phpstack-1419716-5486887.cloudwaysapps.com/paypal-refund", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ transactionId, amount }),
-        });
+      const res = await fetch("https://phpstack-1419716-5486887.cloudwaysapps.com/paypal-refund", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ transactionId, amount }),
+      });
 
-        const data = await res.json();
-        if (!data.success) {
-          alert("❌ PayPal refund failed: " + data.message);
-          return;
-        }
-
-        const payload = preparePayload();
-        payload.variables.input.note = `Refunded via PayPal: ${data.paypalRefundId}`;
-        const formData = new FormData();
-        formData.append("body", JSON.stringify({ ...payload, mode: "refund" }));
-        fetcher.submit(formData, { method: "POST" });
-
-      } catch (err) {
-        alert("❌ PayPal refund error: " + err.message);
+      const data = await res.json();
+      if (!data.success) {
+        alert("❌ PayPal refund failed: " + data.message);
         return;
       }
+
+      const payload = preparePayload();
+      payload.variables.input.note = `Refunded via PayPal: ${data.paypalRefundId}`;
+      const formData = new FormData();
+      formData.append("body", JSON.stringify({ ...payload, mode: "refund" }));
+      fetcher.submit(formData, { method: "POST" });
     } else if (paymentMode === 'stripe') {
-      try {
-        const res = await fetch("https://phpstack-1419716-5486887.cloudwaysapps.com/stripe-refund", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ chargeId: transactionId, amount })
-        });
+      const res = await fetch("https://phpstack-1419716-5486887.cloudwaysapps.com/stripe-refund", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chargeId: transactionId, amount })
+      });
 
-        const data = await res.json();
-        if (!data.success) {
-          alert("❌ Stripe refund failed: " + data.message);
-          return;
-        }
-
-        const payload = preparePayload();
-        payload.variables.input.note = `Refunded via Stripe: ${data.stripeRefundId}`;
-        const formData = new FormData();
-        formData.append("body", JSON.stringify({ ...payload, mode: "refund" }));
-        fetcher.submit(formData, { method: "POST" });
-
-      } catch (err) {
-        alert("❌ Stripe refund error: " + err.message);
+      const data = await res.json();
+      if (!data.success) {
+        alert("❌ Stripe refund failed: " + data.message);
         return;
       }
+
+      const payload = preparePayload();
+      payload.variables.input.note = `Refunded via Stripe: ${data.stripeRefundId}`;
+      const formData = new FormData();
+      formData.append("body", JSON.stringify({ ...payload, mode: "refund" }));
+      fetcher.submit(formData, { method: "POST" });
     } else {
       const formData = new FormData();
       formData.append("body", JSON.stringify({ ...preparePayload(), mode: "refund" }));
       fetcher.submit(formData, { method: "POST" });
     }
+
+    markItemsAsRefunded();
 
     setTimeout(() => {
       alert(`\n✅ Refund Successful!\n\nAmount: $${amount}\nTxn: ${refundMeta.transaction_id}`);
@@ -334,9 +345,10 @@ export default function RefundPage() {
             <Button onClick={goBack}>&larr; Back to Order List</Button>
             <Grid>
               <Grid.Cell columnSpan={{ xs: 6, sm: 8 }}>
-                <Card>
-                  <Text variant="headingMd">Order Line Items</Text>
-                  {selectedOrder.lineItems.map(item => {
+                <Card title="Order Line Items (Available for Refund)">
+                  {availableForRefundList.map(item => {
+                    const alreadyRefunded = refundedItems[item.id] || 0;
+                    const remainingQty = item.quantity - alreadyRefunded;
                     const existing = selectedProducts.find(p => p.id === item.id);
                     const selectedQuantity = existing?.quantity || 0;
 
@@ -351,13 +363,13 @@ export default function RefundPage() {
                           <Text fontWeight="bold">{item.title}</Text>
                           <Text variant="bodySm">{item.sku}</Text>
                           <Text variant="bodySm">
-                            ${item.discountedUnitPriceSet.shopMoney.amount} × {item.quantity}
+                            ${item.discountedUnitPriceSet.shopMoney.amount} × {remainingQty}
                           </Text>
                         </Box>
                         <input
                           type="number"
                           min="0"
-                          max={item.quantity}
+                          max={remainingQty}
                           value={selectedQuantity}
                           onChange={(e) => {
                             const qty = parseInt(e.target.value) || 0;
@@ -381,6 +393,25 @@ export default function RefundPage() {
                     );
                   })}
                 </Card>
+
+                {refundedItemsList.length > 0 && (
+                  <Card title="Already Refunded Items" sectioned>
+                    {refundedItemsList.map(item => (
+                      <Box key={item.id} display="flex" alignItems="center" paddingBlock="300">
+                        <Thumbnail
+                          source={item.image?.originalSrc || "https://cdn.shopify.com/s/files/1/0752/6435/6351/files/no-image-icon.png"}
+                          alt={item.image?.altText || "Product image"}
+                          size="small"
+                        />
+                        <Box paddingInlineStart="300">
+                          <Text fontWeight="bold">{item.title}</Text>
+                          <Text variant="bodySm">{item.sku}</Text>
+                          <Text variant="bodySm" color="subdued">Refunded: {item.quantity} unit(s)</Text>
+                        </Box>
+                      </Box>
+                    ))}
+                  </Card>
+                )}
 
                 <Card title="Refund Shipping" sectioned>
                   <Box display="flex" alignItems="center" gap="300">
@@ -428,18 +459,14 @@ export default function RefundPage() {
                     <Text fontWeight="bold">Refund total</Text>
                     <Text fontWeight="bold">${refundTotal.toFixed(2)}</Text>
                   </Box>
-
                   <Box paddingBlockStart="200">
                     <Button fullWidth variant="secondary" onClick={handleCalculateRefund} disabled={selectedProducts.length === 0}>
                       Calculate Refund
                     </Button>
                   </Box>
-
                   <Box paddingBlockStart="300">
                     <Button fullWidth variant="primary" onClick={handleRefund} disabled={!refundMeta || selectedProducts.length === 0}>
-                      {refundMeta
-                        ? `Refund $${refundMeta.amount} (TX: ${refundMeta.transaction_id})`
-                        : `Refund $${refundTotal.toFixed(2)}`}
+                      {refundMeta ? `Refund $${refundMeta.amount} (TX: ${refundMeta.transaction_id})` : `Refund $${refundTotal.toFixed(2)}`}
                     </Button>
                   </Box>
                 </Card>
@@ -461,7 +488,6 @@ export default function RefundPage() {
                   placeholder="Search #5521, email etc"
                 />
               </Box>
-
               <IndexTable
                 resourceName={{ singular: "order", plural: "orders" }}
                 itemCount={orders.length}
@@ -473,9 +499,6 @@ export default function RefundPage() {
                   { title: "Date" },
                   { title: "Total" },
                   { title: "Payment Status" },
-                  // { title: "Transaction ID" },
-                  // { title: "Gateway" },
-                  // { title: "Location ID" }
                 ]}
               >
                 {orders.map((order, index) => (
@@ -490,13 +513,9 @@ export default function RefundPage() {
                     <IndexTable.Cell>{new Date(order.createdAt).toLocaleString()}</IndexTable.Cell>
                     <IndexTable.Cell>{order.totalPriceSet.shopMoney.amount} {order.totalPriceSet.shopMoney.currencyCode}</IndexTable.Cell>
                     <IndexTable.Cell>{order.displayFinancialStatus || "Unknown"}</IndexTable.Cell>
-                    {/* <IndexTable.Cell>{order.transactionId || "N/A"}</IndexTable.Cell> */}
-                    {/* <IndexTable.Cell>{order.gateway || "manual"}</IndexTable.Cell> */}
-                    {/* <IndexTable.Cell>{order.locationId || "70116966605"}</IndexTable.Cell> */}
                   </IndexTable.Row>
                 ))}
               </IndexTable>
-
               <Box padding="300" display="flex" justifyContent="end">
                 <Pagination
                   hasPrevious={page > 1}
