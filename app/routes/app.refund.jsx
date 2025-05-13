@@ -175,6 +175,8 @@ export const action = async ({ request }) => {
 
 
 
+
+// ✅ PART 2: FINAL UI – Full Component Code with Stripe & PayPal Support
 import {
   Page, Layout, Card, Text, Box, Button, TextField,
   IndexTable, Pagination, Thumbnail, Grid
@@ -192,14 +194,12 @@ export default function RefundPage() {
   const [emailCustomer, setEmailCustomer] = useState(true);
   const [refundMeta, setRefundMeta] = useState(null);
   const fetcher = useFetcher();
+  const hasInitialized = useRef(false);
 
-  const hasInitialized = useRef(false); // ✅ fix reinitialization
-
-  // Initialize values once per order
   useEffect(() => {
     if (selectedOrder && !hasInitialized.current) {
-      const newShippingAmount = selectedOrder?.shippingLines?.edges?.[0]?.node?.originalPriceSet?.shopMoney?.amount || "0.00";
-      setShippingRefundAmount(newShippingAmount);
+      const shippingAmt = selectedOrder?.shippingLines?.edges?.[0]?.node?.originalPriceSet?.shopMoney?.amount || "0.00";
+      setShippingRefundAmount(shippingAmt);
       setShippingRefundSelected(false);
       setSelectedProducts([]);
       setRefundMeta(null);
@@ -207,24 +207,24 @@ export default function RefundPage() {
     }
   }, [selectedOrder]);
 
-  // Reset hasInitialized on back
   const goBack = () => {
     const params = new URLSearchParams(searchParams);
     params.delete("orderId");
     setSearchParams(params);
-    hasInitialized.current = false; // ✅ allow reinitialization
+    hasInitialized.current = false;
   };
 
-  // Auto trigger refund calculation
   useEffect(() => {
     if (selectedProducts.length > 0 || shippingRefundSelected) {
+      const payload = { ...preparePayload(), mode: "calculate" };
       const formData = new FormData();
-      formData.append("body", JSON.stringify({ ...preparePayload(), mode: "calculate" }));
+      formData.append("body", JSON.stringify(payload));
       fetcher.submit(formData, { method: "POST" });
     }
   }, [selectedProducts, shippingRefundSelected]);
 
   useEffect(() => {
+    console.log("🧾 fetcher.data response:", fetcher.data);
     if (fetcher.data?.transactionId && fetcher.data?.amount) {
       setRefundMeta({
         transaction_id: fetcher.data.transactionId,
@@ -233,24 +233,25 @@ export default function RefundPage() {
     }
   }, [fetcher.data]);
 
-  const updatePage = (newPage) => {
-    const params = new URLSearchParams(searchParams);
-    params.set("page", newPage);
-    setSearchParams(params);
-  };
-
   const showOrder = (orderId) => {
     const params = new URLSearchParams(searchParams);
     params.set("orderId", orderId);
     setSearchParams(params);
   };
 
-  const productSubtotal = selectedProducts.reduce(
-    (sum, item) => sum + (parseFloat(item.price) * item.quantity), 0
-  );
+  const updatePage = (newPage) => {
+    const params = new URLSearchParams(searchParams);
+    params.set("page", newPage);
+    setSearchParams(params);
+  };
 
+  const productSubtotal = selectedProducts.reduce(
+    (sum, item) => sum + parseFloat(item.price) * item.quantity,
+    0
+  );
   const shippingRefundValue = shippingRefundSelected ? parseFloat(shippingRefundAmount || 0) : 0;
-  const refundTotal = productSubtotal + shippingRefundValue;
+  const calculatedTotal = refundMeta?.amount || productSubtotal + shippingRefundValue;
+  const calculatedTax = Math.max(0, calculatedTotal - productSubtotal - shippingRefundValue);
 
   const preparePayload = () => ({
     mode: refundMeta ? "refund" : "calculate",
@@ -266,7 +267,7 @@ export default function RefundPage() {
         shipping: shippingRefundSelected ? { amount: shippingRefundAmount } : undefined,
         notifyCustomer: emailCustomer,
         note: reasonForRefund || "Refund processed via app",
-        totalAmount: refundMeta?.amount || refundTotal,
+        totalAmount: calculatedTotal,
         transactionId: refundMeta?.transaction_id || selectedOrder.transactionId,
         gateway: selectedOrder.gateway,
         locationId: selectedOrder.locationId || "70116966605"
@@ -278,13 +279,15 @@ export default function RefundPage() {
     if (selectedProducts.length === 0 || !refundMeta) return alert("No products selected for refund");
 
     const { metafields } = selectedOrder;
-    const taxAmount = refundMeta.amount - productSubtotal - shippingRefundValue;
+    const paymentMode = metafields?.payment_mode?.toLowerCase();
+    const transactionId = metafields?.transaction_id_number;
+    const amount = calculatedTotal;
 
     const summary = `\n🧾 Refund Summary:\n\n` +
       selectedProducts.map(p => `• ${p.title} (Qty: ${p.quantity} × $${p.price})`).join("\n") +
       (shippingRefundSelected ? `\n• Shipping: $${shippingRefundValue.toFixed(2)}` : "") +
-      `\n• Tax: $${taxAmount.toFixed(2)}` +
-      `\n• Total Refund: $${refundMeta.amount.toFixed(2)}` +
+      `\n• Tax: $${calculatedTax.toFixed(2)}` +
+      `\n• Total Refund: $${calculatedTotal.toFixed(2)}` +
       `\n\n📌 Payment Info:\n` +
       `• Mode: ${metafields?.payment_mode || "N/A"}\n` +
       `• Txn ID: ${metafields?.transaction_id_number || "N/A"}` +
@@ -292,12 +295,54 @@ export default function RefundPage() {
 
     if (!window.confirm(summary)) return;
 
-    const formData = new FormData();
-    formData.append("body", JSON.stringify({ ...preparePayload(), mode: "refund" }));
-    fetcher.submit(formData, { method: "POST" });
+    if (paymentMode === 'paypal') {
+      try {
+        const res = await fetch("http://localhost:4000/paypal-refund", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ transactionId, amount })
+        });
+        const data = await res.json();
+        if (!data.success) return alert("❌ PayPal refund failed: " + data.message);
+
+        const payload = preparePayload();
+        payload.variables.input.note = `Refunded via PayPal: ${data.paypalRefundId}`;
+        const formData = new FormData();
+        formData.append("body", JSON.stringify({ ...payload, mode: "refund" }));
+        fetcher.submit(formData, { method: "POST" });
+
+      } catch (err) {
+        return alert("❌ PayPal refund error: " + err.message);
+      }
+
+    } else if (paymentMode === 'stripe') {
+      try {
+        const res = await fetch("http://localhost:4000/stripe-refund", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ chargeId: transactionId, amount })
+        });
+        const data = await res.json();
+        if (!data.success) return alert("❌ Stripe refund failed: " + data.message);
+
+        const payload = preparePayload();
+        payload.variables.input.note = `Refunded via Stripe: ${data.stripeRefundId}`;
+        const formData = new FormData();
+        formData.append("body", JSON.stringify({ ...payload, mode: "refund" }));
+        fetcher.submit(formData, { method: "POST" });
+
+      } catch (err) {
+        return alert("❌ Stripe refund error: " + err.message);
+      }
+
+    } else {
+      const formData = new FormData();
+      formData.append("body", JSON.stringify({ ...preparePayload(), mode: "refund" }));
+      fetcher.submit(formData, { method: "POST" });
+    }
 
     setTimeout(() => {
-      alert(`\n✅ Refund Successful!\n\nAmount: $${refundMeta.amount}\nTxn: ${refundMeta.transaction_id}`);
+      alert(`\n✅ Refund Successful!\n\nAmount: $${amount}\nTxn: ${refundMeta.transaction_id}`);
       goBack();
     }, 800);
   };
@@ -413,13 +458,13 @@ export default function RefundPage() {
                   {refundMeta && (
                     <Box display="flex" justifyContent="space-between" paddingBlockStart="100">
                       <Text>Tax</Text>
-                      <Text>${(refundMeta.amount - productSubtotal - shippingRefundValue).toFixed(2)}</Text>
+                      <Text>${calculatedTax.toFixed(2)}</Text>
                     </Box>
                   )}
                   <Box display="flex" justifyContent="space-between" paddingBlockStart="300">
                     <Text fontWeight="bold">Total Refund</Text>
                     <Text fontWeight="bold">
-                      {refundMeta ? `$${refundMeta.amount.toFixed(2)}` : `$${refundTotal.toFixed(2)}`}
+                      {refundMeta ? `$${calculatedTotal.toFixed(2)}` : `$${(productSubtotal + shippingRefundValue).toFixed(2)}`}
                     </Text>
                   </Box>
                   <Box paddingBlockStart="300">
@@ -430,8 +475,8 @@ export default function RefundPage() {
                       disabled={!refundMeta || selectedProducts.length === 0}
                     >
                       {refundMeta
-                        ? `Refund $${refundMeta.amount.toFixed(2)} (TX: ${refundMeta.transaction_id})`
-                        : `Refund $${refundTotal.toFixed(2)}`}
+                        ? `Refund $${calculatedTotal.toFixed(2)} (TX: ${refundMeta.transaction_id})`
+                        : `Refund $${(productSubtotal + shippingRefundValue).toFixed(2)}`}
                     </Button>
                   </Box>
                 </Card>
@@ -497,6 +542,7 @@ export default function RefundPage() {
     </Page>
   );
 }
+
 
 
 
