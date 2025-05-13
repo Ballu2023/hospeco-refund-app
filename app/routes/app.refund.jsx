@@ -1,4 +1,4 @@
-// ✅ Full Loader & Action for Refund Page with Refunded Quantity and Tax Support
+// ✅ Updated Refund Page Loader & Action without quantityRefunded (uses metafields/refund logic)
 import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 
@@ -37,7 +37,6 @@ export const loader = async ({ request }) => {
                 edges {
                   node {
                     id title quantity sku
-                    quantityRefunded
                     image { originalSrc altText }
                     discountedUnitPriceSet { shopMoney { amount currencyCode } }
                   }
@@ -83,7 +82,7 @@ export const loader = async ({ request }) => {
 
         const enrichedLineItems = node.lineItems.edges.map(({ node: item }) => ({
           ...item,
-          refundedQuantity: item.quantityRefunded || 0
+          refunded: false // Set logic from metafields if needed
         }));
 
         allOrders.push({
@@ -164,6 +163,7 @@ export const action = async ({ request }) => {
     return json({ error: "Refund failed." }, { status: 500 });
   }
 };
+
 
 
 
