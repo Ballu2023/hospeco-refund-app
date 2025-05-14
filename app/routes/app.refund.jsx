@@ -219,8 +219,7 @@ export const action = async ({ request }) => {
 
 
 
-
-// ✅ COMPLETE Refund UI Page (Final Copy-Paste Ready Version)
+// ✅ FINAL Refund Page (with all 3 major bug fixes)
 import {
   Page, Layout, Card, Text, Box, Button, TextField,
   IndexTable, Pagination, Thumbnail
@@ -241,6 +240,13 @@ export default function RefundPage() {
   const fetcher = useFetcher();
 
   const totalPages = Math.ceil(total / 25);
+
+  // ✅ Reset refundMeta and selections when switching orders
+  useEffect(() => {
+    setRefundMeta(null);
+    setSelectedProducts([]);
+    setShippingRefundSelected(false);
+  }, [selectedOrder?.id]);
 
   useEffect(() => {
     if (selectedOrder?.shippingLines?.edges?.[0]?.node?.originalPriceSet?.shopMoney?.amount) {
@@ -273,6 +279,7 @@ export default function RefundPage() {
     const params = new URLSearchParams(searchParams);
     params.delete("orderId");
     setSearchParams(params);
+    setRefundMeta(null); // ✅ Clear refund summary after going back
   };
 
   const productSubtotal = selectedProducts.reduce(
@@ -373,7 +380,7 @@ export default function RefundPage() {
           <>
             <Button onClick={goBack}>&larr; Back to Order List</Button>
 
-            {/* ✅ Refunded Items */}
+            {/* ✅ Refunded Items Section */}
             {refundedItems?.length > 0 && (
               <Card title="Refunded Items" sectioned>
                 {refundedItems.map((item, idx) => (
@@ -391,7 +398,7 @@ export default function RefundPage() {
               </Card>
             )}
 
-            {/* ✅ Products Available to Refund */}
+            {/* ✅ Remaining Products for Refund */}
             {selectedOrder.lineItems.length === 0 ? (
               <Card sectioned>
                 <Text>No refundable products available.</Text>
@@ -446,6 +453,7 @@ export default function RefundPage() {
               </Card>
             )}
 
+            {/* Shipping Refund */}
             <Card title="Refund Shipping" sectioned>
               <Box display="flex" alignItems="center" gap="300">
                 <input
@@ -464,6 +472,7 @@ export default function RefundPage() {
               </Box>
             </Card>
 
+            {/* Reason for Refund */}
             <Card title="Reason for Refund" sectioned>
               <TextField
                 value={reasonForRefund}
@@ -473,6 +482,7 @@ export default function RefundPage() {
               />
             </Card>
 
+            {/* Summary */}
             <Card title="Summary" sectioned>
               <Box display="flex" justifyContent="space-between">
                 <Text>Item subtotal</Text>
@@ -564,6 +574,7 @@ export default function RefundPage() {
     </Page>
   );
 }
+
 
 
 
