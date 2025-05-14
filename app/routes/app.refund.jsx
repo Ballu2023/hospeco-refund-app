@@ -1,3 +1,4 @@
+// ✅ Part 1 — LOADER and ACTION Logic (app/routes/app.refund.jsx)
 import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 
@@ -43,20 +44,8 @@ export const loader = async ({ request }) => {
               }
               metafields(first: 10, namespace: "custom") {
                 edges {
-                  node { key value }
-                }
-              }
-              refunds(first: 10) {
-                edges {
                   node {
-                    refundLineItems(first: 50) {
-                      edges {
-                        node {
-                          quantity
-                          lineItem { id }
-                        }
-                      }
-                    }
+                    key value
                   }
                 }
               }
@@ -92,28 +81,10 @@ export const loader = async ({ request }) => {
           metafields[node.key] = node.value;
         });
 
-        const refundedQuantities = {};
-        node.refunds?.edges?.forEach(({ node: refund }) => {
-          refund.refundLineItems.edges.forEach(({ node: rItem }) => {
-            const lineId = rItem.lineItem?.id;
-            if (lineId) {
-              refundedQuantities[lineId] = (refundedQuantities[lineId] || 0) + rItem.quantity;
-            }
-          });
-        });
-
-        const adjustedLineItems = node.lineItems.edges
-          .map(({ node: item }) => {
-            const refundedQty = refundedQuantities[item.id] || 0;
-            const remainingQty = item.quantity - refundedQty;
-            return remainingQty > 0 ? { ...item, quantity: remainingQty } : null;
-          })
-          .filter(Boolean);
-
         allOrders.push({
           ...node,
           cursor,
-          lineItems: adjustedLineItems,
+          lineItems: node.lineItems.edges.map(({ node }) => node),
           orderId: orderIdNum,
           transactionId,
           gateway,
@@ -138,6 +109,7 @@ export const loader = async ({ request }) => {
   const paginatedOrders = filteredOrders.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const selectedOrder = selectedOrderId ? allOrders.find(o => o.id === selectedOrderId) : null;
 
+  // ✅ Fetch Refunded Products if selectedOrderId exists
   let refundedItems = [];
   if (selectedOrderId) {
     try {
@@ -208,11 +180,10 @@ export const action = async ({ request }) => {
 
 
 
-
-
+// ✅ app/routes/app.refund.jsx — FULL UI EXPORT DEFAULT COMPONENT
 import {
   Page, Layout, Card, Text, Box, Button, TextField,
-  IndexTable, Pagination, Thumbnail
+  IndexTable, Pagination, Thumbnail, Grid
 } from "@shopify/polaris";
 import { useLoaderData, useSearchParams, useFetcher } from "@remix-run/react";
 import { useState, useEffect } from "react";
@@ -231,6 +202,7 @@ export default function RefundPage() {
 
   const totalPages = Math.ceil(total / 25);
 
+  // ✅ Fix: Load shipping amount on first mount (even before refresh)
   useEffect(() => {
     if (selectedOrder?.shippingLines?.edges?.[0]?.node?.originalPriceSet?.shopMoney?.amount) {
       setShippingRefundAmount(selectedOrder.shippingLines.edges[0].node.originalPriceSet.shopMoney.amount);
@@ -304,21 +276,23 @@ export default function RefundPage() {
 
     const { metafields } = selectedOrder;
 
-    const summary = `🧾 Refund Summary:\n\n` +
+    const summary = `\n🧾 Refund Summary:\n\n` +
       selectedProducts.map(p => `• ${p.title} (Qty: ${p.quantity} × $${p.price})`).join("\n") +
       (shippingRefundSelected ? `\n• Shipping: $${parseFloat(shippingRefundAmount).toFixed(2)}` : "") +
       `\n• Tax: $${taxAmount.toFixed(2)}` +
       `\n• Total Refund: $${refundMeta.amount}` +
       `\n\n📌 Payment Info:\n` +
       `• Mode: ${metafields?.payment_mode || "N/A"}\n` +
-      `• Txn ID: ${metafields?.transaction_id_number || "N/A"}`;
+      `• Txn ID: ${metafields?.transaction_id_number || "N/A"}` +
+      `\n\nClick OK to continue with the refund.`;
 
-    const confirmRefund = window.confirm(summary + `\n\nProceed?`);
+    const confirmRefund = window.confirm(summary);
     if (!confirmRefund) return;
 
     const paymentMode = metafields?.payment_mode?.toLowerCase();
     const transactionId = metafields?.transaction_id_number;
     const amount = refundMeta.amount;
+
     const payload = preparePayload();
 
     if (paymentMode === 'paypal') {
@@ -336,7 +310,7 @@ export default function RefundPage() {
       const res = await fetch("https://phpstack-1419716-5486887.cloudwaysapps.com/stripe-refund", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chargeId: transactionId, amount }),
+        body: JSON.stringify({ chargeId: transactionId, amount })
       });
       const data = await res.json();
       if (!data.success) return alert("❌ Stripe refund failed: " + data.message);
@@ -348,7 +322,7 @@ export default function RefundPage() {
     fetcher.submit(formData, { method: "POST" });
 
     setTimeout(() => {
-      alert(`✅ Refund Successful!\nAmount: $${amount}`);
+      alert(`\n✅ Refund Successful!\n\nAmount: $${amount}\nTxn: ${refundMeta.transaction_id}`);
       goBack();
     }, 800);
   };
@@ -360,7 +334,7 @@ export default function RefundPage() {
           <>
             <Button onClick={goBack}>&larr; Back to Order List</Button>
 
-            {/* Refunded Items */}
+            {/* ✅ Refunded Items Section */}
             {refundedItems?.length > 0 && (
               <Card title="Refunded Items" sectioned>
                 {refundedItems.map((item, idx) => (
@@ -378,8 +352,9 @@ export default function RefundPage() {
               </Card>
             )}
 
-            {/* Line Items */}
-            <Card title="Order Line Items" sectioned>
+            {/* ✅ Product Line Items for Refund */}
+            <Card>
+              <Text variant="headingMd">Order Line Items</Text>
               {selectedOrder.lineItems.map(item => {
                 const existing = selectedProducts.find(p => p.id === item.id);
                 const selectedQuantity = existing?.quantity || 0;
@@ -426,7 +401,7 @@ export default function RefundPage() {
               })}
             </Card>
 
-            {/* Shipping */}
+            {/* ✅ Shipping Refund Box */}
             <Card title="Refund Shipping" sectioned>
               <Box display="flex" alignItems="center" gap="300">
                 <input
@@ -445,7 +420,7 @@ export default function RefundPage() {
               </Box>
             </Card>
 
-            {/* Reason */}
+            {/* ✅ Reason */}
             <Card title="Reason for Refund" sectioned>
               <TextField
                 value={reasonForRefund}
@@ -455,7 +430,7 @@ export default function RefundPage() {
               />
             </Card>
 
-            {/* Summary */}
+            {/* ✅ Summary Box */}
             <Card title="Summary" sectioned>
               <Box display="flex" justifyContent="space-between">
                 <Text>Item subtotal</Text>
@@ -549,3 +524,14 @@ export default function RefundPage() {
     </Page>
   );
 }
+
+
+
+
+
+
+
+
+
+
+
