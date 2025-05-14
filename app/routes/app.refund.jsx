@@ -181,6 +181,9 @@ export default function RefundPage() {
   const [refundMeta, setRefundMeta] = useState(null);
   const [filter, setFilter] = useState("");
   const fetcher = useFetcher();
+  const [refundHistory, setRefundHistory] = useState(null);
+const [loadingHistory, setLoadingHistory] = useState(false);
+
 
   const totalPages = Math.ceil(total / 25);
 
@@ -253,6 +256,26 @@ export default function RefundPage() {
       }
     }
   });
+
+const fetchRefundHistory = async () => {
+  if (!selectedOrder) return;
+  setLoadingHistory(true);
+
+  try {
+    const orderIdNum = selectedOrder.id.split("/").pop(); // extract numeric ID
+    const res = await fetch(`https://phpstack-1419716-5486887.cloudwaysapps.com/refunds/${orderIdNum}`);
+    const data = await res.json();
+
+    setRefundHistory(data.refunds || []);
+  } catch (err) {
+    console.error("❌ Error fetching refund history:", err);
+    setRefundHistory([]);
+  } finally {
+    setLoadingHistory(false);
+  }
+};
+
+
 
   const handleCalculateRefund = () => {
     const formData = new FormData();
@@ -426,9 +449,37 @@ export default function RefundPage() {
                 </Card>
 
 <Card>
-              <Button onClick={goBack}>&larr; Showe Refunded Item</Button>
+  <Button onClick={fetchRefundHistory}>Show Refunded Items</Button>
 
+  {/* Loading state */}
+  {loadingHistory && (
+    <Box paddingBlockStart="200">
+      <Text>Loading refund history...</Text>
+    </Box>
+  )}
+
+  {/* Refund history section */}
+  {refundHistory && (
+    refundHistory.length > 0 ? (
+      <Card title="Refunded Items" sectioned>
+        {refundHistory.map((item, index) => (
+          <Box key={index} paddingBlock="200" borderBottom>
+            <Text fontWeight="bold">{item.title}</Text>
+            <Text>SKU: {item.sku}</Text>
+            <Text>Quantity Refunded: {item.quantity}</Text>
+            <Text>Amount Refunded: ${item.amount}</Text>
+            <Text>Tax: ${item.taxAmount || "0.00"}</Text>
+          </Box>
+        ))}
+      </Card>
+    ) : (
+      <Card sectioned>
+        <Text color="subdued">No refund history available.</Text>
+      </Card>
+    )
+  )}
 </Card>
+
 
               </Grid.Cell>
 
