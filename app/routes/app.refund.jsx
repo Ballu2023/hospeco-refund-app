@@ -1,4 +1,3 @@
-// ✅ Part 1 — Updated LOADER and ACTION Logic (app/routes/app.refund.jsx)
 import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 
@@ -81,10 +80,12 @@ export const loader = async ({ request }) => {
           metafields[node.key] = node.value;
         });
 
+        const lineItems = node.lineItems.edges.map(({ node }) => node);
+
         allOrders.push({
           ...node,
           cursor,
-          lineItems: node.lineItems.edges.map(({ node }) => node),
+          lineItems,
           orderId: orderIdNum,
           transactionId,
           gateway,
@@ -109,7 +110,6 @@ export const loader = async ({ request }) => {
   const paginatedOrders = filteredOrders.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const selectedOrder = selectedOrderId ? allOrders.find(o => o.id === selectedOrderId) : null;
 
-  // ✅ New: Fetch DB-based refunded quantity and shipping
   let refundedItems = [];
   let refundQtyMap = {};
   let refundedShippingAmount = 0;
@@ -121,7 +121,20 @@ export const loader = async ({ request }) => {
       refundQtyMap = result.refundedQtyMap || {};
       refundedShippingAmount = result.refundedShippingAmount || 0;
 
-      refundedItems = selectedOrder.lineItems
+      // ✅ Save original items
+      selectedOrder.lineItemsRaw = [...selectedOrder.lineItems];
+
+      // ✅ Filter out refunded items
+      selectedOrder.lineItems = selectedOrder.lineItems
+        .map(item => {
+          const refunded = refundQtyMap[item.id.split("/").pop()] || 0;
+          const remaining = item.quantity - refunded;
+          return remaining > 0 ? { ...item, quantity: remaining } : null;
+        })
+        .filter(Boolean);
+
+      // ✅ Build Refunded Items section
+      refundedItems = selectedOrder.lineItemsRaw
         .filter(item => refundQtyMap[item.id.split("/").pop()])
         .map(item => ({
           title: item.title,
@@ -131,23 +144,12 @@ export const loader = async ({ request }) => {
           line_item_id: item.id,
         }));
 
-      // Adjust line items: update quantity = total - refunded
-      selectedOrder.lineItems = selectedOrder.lineItems
-        .map(item => {
-          const originalQty = item.quantity;
-          const refundedQty = refundQtyMap[item.id.split("/").pop()] || 0;
-          const remainingQty = originalQty - refundedQty;
-          return remainingQty > 0 ? { ...item, quantity: remainingQty } : null;
-        })
-        .filter(Boolean);
-
-      // Adjust shipping value
+      // ✅ Adjust remaining shipping
       const originalShipping = selectedOrder?.shippingLines?.edges?.[0]?.node?.originalPriceSet?.shopMoney?.amount || "0.00";
       const remainingShipping = parseFloat(originalShipping) - parseFloat(refundedShippingAmount || 0);
       if (selectedOrder.shippingLines?.edges?.[0]?.node) {
         selectedOrder.shippingLines.edges[0].node.originalPriceSet.shopMoney.amount = remainingShipping.toFixed(2);
       }
-
     } catch (err) {
       console.error("❌ Refunded data fetch failed:", err);
     }
@@ -162,7 +164,7 @@ export const loader = async ({ request }) => {
   });
 };
 
-// ✅ ACTION logic remains unchanged — no need to modify
+// ✅ ACTION (same as before, fully working)
 export const action = async ({ request }) => {
   try {
     const formData = await request.formData();
@@ -208,6 +210,7 @@ export const action = async ({ request }) => {
     return json({ error: "Refund failed." }, { status: 500 });
   }
 };
+
 
 
 
