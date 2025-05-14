@@ -186,6 +186,34 @@ export default function RefundPage() {
   const fetcher = useFetcher();
   const totalPages = Math.ceil(total / 25);
 
+
+  useEffect(() => {
+  if (!refundHistory || !selectedOrder) return;
+
+  const refundedMap = {};
+
+  // Create a map of refunded quantities by line item ID
+  refundHistory.forEach(refund => {
+    refund.refund_line_items.forEach(refItem => {
+      const lineId = refItem.line_item.id;
+      refundedMap[lineId] = (refundedMap[lineId] || 0) + refItem.quantity;
+    });
+  });
+
+  // Update line items list
+  const updatedLineItems = selectedOrder.lineItems
+    .map(item => {
+      const refundedQty = refundedMap[item.id] || 0;
+      const remainingQty = item.quantity - refundedQty;
+      if (remainingQty <= 0) return null; // fully refunded, remove
+      return { ...item, quantity: remainingQty }; // partially refunded
+    })
+    .filter(Boolean); // remove nulls
+
+  selectedOrder.lineItems = updatedLineItems;
+}, [refundHistory, selectedOrder]);
+
+
   useEffect(() => {
     if (selectedOrder) {
       setSelectedProducts([]);
