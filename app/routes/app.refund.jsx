@@ -424,6 +424,12 @@ export default function RefundPage() {
                     placeholder="Only you and staff can see this reason"
                   />
                 </Card>
+
+<Card>
+              <Button onClick={goBack}>&larr; Showe Refunded Item</Button>
+
+</Card>
+
               </Grid.Cell>
 
               <Grid.Cell columnSpan={{ xs: 6, sm: 4 }}>
