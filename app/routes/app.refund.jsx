@@ -451,25 +451,45 @@ const fetchRefundHistory = async () => {
 <Card>
   <Button onClick={fetchRefundHistory}>Show Refunded Items</Button>
 
-  {/* Loading state */}
+  {/* Show loading message while fetching */}
   {loadingHistory && (
     <Box paddingBlockStart="200">
       <Text>Loading refund history...</Text>
     </Box>
   )}
 
-  {/* Refund history section */}
+  {/* Show refund history if available */}
   {refundHistory && (
     refundHistory.length > 0 ? (
       <Card title="Refunded Items" sectioned>
-        {refundHistory.map((item, index) => (
-          <Box key={index} paddingBlock="200" borderBottom>
-            <Text fontWeight="bold">{item.title}</Text>
-            <Text>SKU: {item.sku}</Text>
-            <Text>Quantity Refunded: {item.quantity}</Text>
-            <Text>Amount Refunded: ${item.amount}</Text>
-            <Text>Tax: ${item.taxAmount || "0.00"}</Text>
-          </Box>
+        {refundHistory.map((refund, refundIndex) => (
+          <div key={refundIndex}>
+            {refund.refund_line_items.map((item, itemIndex) => {
+              const line = item.line_item;
+              return (
+                <Box key={itemIndex} paddingBlock="200" borderBottom>
+                  <Text fontWeight="bold">{line?.title || "Untitled Product"}</Text>
+                  <Text>SKU: {line?.sku || "N/A"}</Text>
+                  <Text>Quantity Refunded: {item.quantity}</Text>
+                  <Text>Amount Refunded: ${parseFloat(item.subtotal || 0).toFixed(2)}</Text>
+                  <Text>Tax: ${parseFloat(item.total_tax || 0).toFixed(2)}</Text>
+                </Box>
+              );
+            })}
+
+            {/* Optionally show shipping refund info if present */}
+            {refund.refund_shipping_lines?.length > 0 && (
+              <Box paddingBlock="200" borderBottom>
+                <Text fontWeight="bold">Shipping Refunded</Text>
+                <Text>
+                  Amount: ${refund.refund_shipping_lines[0].subtotal_amount_set.shop_money.amount}
+                </Text>
+                <Text>
+                  Tax: ${refund.order_adjustments?.[0]?.tax_amount_set?.shop_money?.amount || "0.00"}
+                </Text>
+              </Box>
+            )}
+          </div>
         ))}
       </Card>
     ) : (
@@ -479,6 +499,7 @@ const fetchRefundHistory = async () => {
     )
   )}
 </Card>
+
 
 
               </Grid.Cell>
