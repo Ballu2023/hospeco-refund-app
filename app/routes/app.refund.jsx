@@ -1,4 +1,4 @@
-// app/routes/app.refund.jsx
+// ✅ PART 1 — Loader and Action Logic
 import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 
@@ -138,7 +138,9 @@ export const action = async ({ request }) => {
       }
     };
 
-    const endpoint = isCalculation ? "https://phpstack-1419716-5486887.cloudwaysapps.com/calculate" : "https://phpstack-1419716-5486887.cloudwaysapps.com/refund";
+    const endpoint = isCalculation
+      ? "https://phpstack-1419716-5486887.cloudwaysapps.com/calculate"
+      : "https://phpstack-1419716-5486887.cloudwaysapps.com/refund";
 
     const res = await fetch(endpoint, {
       method: "POST",
@@ -159,6 +161,8 @@ export const action = async ({ request }) => {
 
 
 
+
+// ✅ Remix UI — app/routes/app.refund.jsx (only the component part here)
 import {
   Page, Layout, Card, Text, Box, Button, TextField,
   IndexTable, Pagination, Thumbnail, Grid
@@ -171,9 +175,7 @@ export default function RefundPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [selectedProducts, setSelectedProducts] = useState([]);
   const [shippingRefundSelected, setShippingRefundSelected] = useState(false);
-  const [shippingRefundAmount, setShippingRefundAmount] = useState(
-    selectedOrder?.shippingLines?.edges?.[0]?.node?.originalPriceSet?.shopMoney?.amount || "0.00"
-  );
+  const [shippingRefundAmount, setShippingRefundAmount] = useState("0.00"); // ✅ Blank initially
   const [reasonForRefund, setReasonForRefund] = useState("");
   const [emailCustomer, setEmailCustomer] = useState(true);
   const [refundMeta, setRefundMeta] = useState(null);
@@ -181,6 +183,20 @@ export default function RefundPage() {
   const fetcher = useFetcher();
 
   const totalPages = Math.ceil(total / 25);
+
+  // ✅ Fix #1 and #2: Reset all states on order change
+  useEffect(() => {
+    if (selectedOrder) {
+      setSelectedProducts([]);
+      setShippingRefundSelected(false);
+      setShippingRefundAmount(
+        selectedOrder?.shippingLines?.edges?.[0]?.node?.originalPriceSet?.shopMoney?.amount || "0.00"
+      );
+      setReasonForRefund("");
+      setEmailCustomer(true);
+      setRefundMeta(null);
+    }
+  }, [selectedOrder]);
 
   useEffect(() => {
     if (fetcher.data?.transactionId && fetcher.data?.amount) {
@@ -472,10 +488,7 @@ export default function RefundPage() {
                   { title: "Email" },
                   { title: "Date" },
                   { title: "Total" },
-                  { title: "Payment Status" },
-                  // { title: "Transaction ID" },
-                  // { title: "Gateway" },
-                  // { title: "Location ID" }
+                  { title: "Payment Status" }
                 ]}
               >
                 {orders.map((order, index) => (
@@ -490,9 +503,6 @@ export default function RefundPage() {
                     <IndexTable.Cell>{new Date(order.createdAt).toLocaleString()}</IndexTable.Cell>
                     <IndexTable.Cell>{order.totalPriceSet.shopMoney.amount} {order.totalPriceSet.shopMoney.currencyCode}</IndexTable.Cell>
                     <IndexTable.Cell>{order.displayFinancialStatus || "Unknown"}</IndexTable.Cell>
-                    {/* <IndexTable.Cell>{order.transactionId || "N/A"}</IndexTable.Cell> */}
-                    {/* <IndexTable.Cell>{order.gateway || "manual"}</IndexTable.Cell> */}
-                    {/* <IndexTable.Cell>{order.locationId || "70116966605"}</IndexTable.Cell> */}
                   </IndexTable.Row>
                 ))}
               </IndexTable>
@@ -511,7 +521,8 @@ export default function RefundPage() {
       </div>
     </Page>
   );
-};
+}
+
 
 
 
