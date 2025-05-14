@@ -451,33 +451,59 @@ const fetchRefundHistory = async () => {
 <Card>
   <Button onClick={fetchRefundHistory}>Show Refunded Items</Button>
 
-  {/* Show loading message while fetching */}
   {loadingHistory && (
     <Box paddingBlockStart="200">
       <Text>Loading refund history...</Text>
     </Box>
   )}
 
-  {/* Show refund history if available */}
   {refundHistory && (
     refundHistory.length > 0 ? (
       <Card title="Refunded Items" sectioned>
         {refundHistory.map((refund, refundIndex) => (
           <div key={refundIndex}>
+            <Box paddingBlock="100">
+              <Text fontWeight="bold">Refund Date:</Text>
+              <Text>{new Date(refund.created_at).toLocaleString()}</Text>
+              {refund.note && (
+                <Box paddingBlockStart="100">
+                  <Text fontWeight="bold">Note:</Text>
+                  <Text>{refund.note}</Text>
+                </Box>
+              )}
+              {refund.transactions?.[0]?.id && (
+                <Box paddingBlockStart="100">
+                  <Text fontWeight="bold">Transaction ID:</Text>
+                  <Text>{refund.transactions[0].id}</Text>
+                  <Text>Gateway: {refund.transactions[0].gateway}</Text>
+                </Box>
+              )}
+            </Box>
+
             {refund.refund_line_items.map((item, itemIndex) => {
               const line = item.line_item;
+              const imageUrl = `https://cdn.shopify.com/s/files/1/0752/6435/6351/files/no-image-icon.png`; // Replace if real image URL is available
+
               return (
-                <Box key={itemIndex} paddingBlock="200" borderBottom>
-                  <Text fontWeight="bold">{line?.title || "Untitled Product"}</Text>
-                  <Text>SKU: {line?.sku || "N/A"}</Text>
-                  <Text>Quantity Refunded: {item.quantity}</Text>
-                  <Text>Amount Refunded: ${parseFloat(item.subtotal || 0).toFixed(2)}</Text>
-                  <Text>Tax: ${parseFloat(item.total_tax || 0).toFixed(2)}</Text>
+                <Box key={itemIndex} paddingBlock="200" borderBottom display="flex" gap="300">
+                  <img
+                    src={imageUrl}
+                    alt={line?.title}
+                    width={60}
+                    height={60}
+                    style={{ borderRadius: 4, objectFit: 'cover' }}
+                  />
+                  <Box>
+                    <Text fontWeight="bold">{line?.title || "Untitled Product"}</Text>
+                    <Text>SKU: {line?.sku || "N/A"}</Text>
+                    <Text>Quantity Refunded: {item.quantity}</Text>
+                    <Text>Amount Refunded: ${parseFloat(item.subtotal || 0).toFixed(2)}</Text>
+                    <Text>Tax: ${parseFloat(item.total_tax || 0).toFixed(2)}</Text>
+                  </Box>
                 </Box>
               );
             })}
 
-            {/* Optionally show shipping refund info if present */}
             {refund.refund_shipping_lines?.length > 0 && (
               <Box paddingBlock="200" borderBottom>
                 <Text fontWeight="bold">Shipping Refunded</Text>
@@ -499,6 +525,7 @@ const fetchRefundHistory = async () => {
     )
   )}
 </Card>
+
 
 
 
