@@ -1,4 +1,4 @@
-// ✅ PART 1 — Loader and Action Logic
+// ✅ PART 1 — Loader and Action Logic (app/routes/app.refund.jsx)
 import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 
@@ -54,6 +54,7 @@ export const loader = async ({ request }) => {
         }
       }
     `;
+
     const response = await admin.graphql(query, { variables: { first: 250, after: afterCursor } });
     const data = await response.json();
     const orders = data.data.orders.edges;
@@ -106,9 +107,52 @@ export const loader = async ({ request }) => {
   });
 
   const paginatedOrders = filteredOrders.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-  const selectedOrder = selectedOrderId ? allOrders.find(o => o.id === selectedOrderId) : null;
+  let selectedOrder = selectedOrderId ? allOrders.find(o => o.id === selectedOrderId) : null;
 
-  return json({ orders: paginatedOrders, total: filteredOrders.length, page, selectedOrder });
+  // ✅ Refunded Items Logic from Shopify Refunds API
+  if (selectedOrder) {
+    const orderIdNum = selectedOrder.id.split("/").pop();
+    let refundedItems = [];
+
+    try {
+      const refundRes = await admin.rest.get({
+        path: `/admin/api/2023-10/orders/${orderIdNum}/refunds.json`,
+      });
+
+      const refundLineItems = refundRes.body.refunds.flatMap(refund =>
+        refund.refund_line_items.map(line => ({
+          line_item_id: line.line_item_id,
+          refunded_quantity: line.quantity,
+          refunded_price: (line.subtotal || 0) / line.quantity,
+        }))
+      );
+
+      refundedItems = refundLineItems.map(refunded => {
+        const match = selectedOrder.lineItems.find(item =>
+          item.id.includes(refunded.line_item_id)
+        );
+        return {
+          id: refunded.line_item_id,
+          title: match?.title || "Unknown",
+          sku: match?.sku || "N/A",
+          image: match?.image?.originalSrc || "",
+          refunded_quantity: refunded.refunded_quantity,
+          refunded_price: parseFloat(refunded.refunded_price).toFixed(2),
+        };
+      });
+    } catch (e) {
+      console.warn("Failed to fetch refunds:", e);
+    }
+
+    selectedOrder.refundedItems = refundedItems;
+  }
+
+  return json({
+    orders: paginatedOrders,
+    total: filteredOrders.length,
+    page,
+    selectedOrder,
+  });
 };
 
 export const action = async ({ request }) => {
@@ -162,7 +206,7 @@ export const action = async ({ request }) => {
 
 
 
-// ✅ Remix UI — app/routes/app.refund.jsx (only the component part here)
+
 import {
   Page, Layout, Card, Text, Box, Button, TextField,
   IndexTable, Pagination, Thumbnail, Grid
@@ -175,7 +219,7 @@ export default function RefundPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [selectedProducts, setSelectedProducts] = useState([]);
   const [shippingRefundSelected, setShippingRefundSelected] = useState(false);
-  const [shippingRefundAmount, setShippingRefundAmount] = useState("0.00"); // ✅ Blank initially
+  const [shippingRefundAmount, setShippingRefundAmount] = useState("0.00");
   const [reasonForRefund, setReasonForRefund] = useState("");
   const [emailCustomer, setEmailCustomer] = useState(true);
   const [refundMeta, setRefundMeta] = useState(null);
@@ -184,7 +228,6 @@ export default function RefundPage() {
 
   const totalPages = Math.ceil(total / 25);
 
-  // ✅ Fix #1 and #2: Reset all states on order change
   useEffect(() => {
     if (selectedOrder) {
       setSelectedProducts([]);
@@ -350,6 +393,28 @@ export default function RefundPage() {
             <Button onClick={goBack}>&larr; Back to Order List</Button>
             <Grid>
               <Grid.Cell columnSpan={{ xs: 6, sm: 8 }}>
+                {/* ✅ Refunded Items Section */}
+                {selectedOrder?.refundedItems?.length > 0 && (
+                  <Card title="Refunded Items" sectioned>
+                    {selectedOrder.refundedItems.map((item, idx) => (
+                      <Box key={item.id || idx} display="flex" alignItems="center" paddingBlock="300">
+                        <Thumbnail
+                          source={item.image || "https://cdn.shopify.com/s/files/1/0752/6435/6351/files/no-image-icon.png"}
+                          alt={item.title}
+                          size="small"
+                        />
+                        <Box paddingInlineStart="300" flexGrow={1}>
+                          <Text fontWeight="bold">{item.title}</Text>
+                          <Text variant="bodySm">SKU: {item.sku || "N/A"}</Text>
+                          <Text variant="bodySm">
+                            Refunded: {item.refunded_quantity} × ${item.refunded_price}
+                          </Text>
+                        </Box>
+                      </Box>
+                    ))}
+                  </Card>
+                )}
+
                 <Card>
                   <Text variant="headingMd">Order Line Items</Text>
                   {selectedOrder.lineItems.map(item => {
