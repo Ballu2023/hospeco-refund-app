@@ -1,4 +1,4 @@
-// ✅ PART 1 — Loader and Action Logic (app/routes/app.refund.jsx)
+// ✅ PART 1 — Complete Loader and Action Logic (app/routes/app.refund.jsx)
 import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 
@@ -109,39 +109,43 @@ export const loader = async ({ request }) => {
   const paginatedOrders = filteredOrders.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   let selectedOrder = selectedOrderId ? allOrders.find(o => o.id === selectedOrderId) : null;
 
-  // ✅ Refunded Items Logic from Shopify Refunds API
+  // ✅ Fetch refunded data and attach remaining_quantity to each line item
   if (selectedOrder) {
     const orderIdNum = selectedOrder.id.split("/").pop();
     let refundedItems = [];
 
     try {
-      const refundRes = await admin.rest.get({
-        path: `/admin/api/2023-10/orders/${orderIdNum}/refunds.json`,
+      const refundRes = await admin.rest.get({ path: `/admin/api/2023-10/orders/${orderIdNum}/refunds.json` });
+      const refundLineItems = refundRes.body.refunds.flatMap(refund => refund.refund_line_items);
+
+      const refundQuantityMap = {};
+      refundLineItems.forEach(line => {
+        const id = line.line_item_id.toString();
+        refundQuantityMap[id] = (refundQuantityMap[id] || 0) + line.quantity;
       });
 
-      const refundLineItems = refundRes.body.refunds.flatMap(refund =>
-        refund.refund_line_items.map(line => ({
-          line_item_id: line.line_item_id,
-          refunded_quantity: line.quantity,
-          refunded_price: (line.subtotal || 0) / line.quantity,
-        }))
-      );
+      selectedOrder.lineItems.forEach(item => {
+        const numericId = item.id.split("/").pop();
+        const refundedQty = refundQuantityMap[numericId] || 0;
+        item.remaining_quantity = item.quantity - refundedQty;
+      });
 
       refundedItems = refundLineItems.map(refunded => {
         const match = selectedOrder.lineItems.find(item =>
-          item.id.includes(refunded.line_item_id)
+          item.id.includes(refunded.line_item_id.toString())
         );
         return {
           id: refunded.line_item_id,
           title: match?.title || "Unknown",
           sku: match?.sku || "N/A",
           image: match?.image?.originalSrc || "",
-          refunded_quantity: refunded.refunded_quantity,
-          refunded_price: parseFloat(refunded.refunded_price).toFixed(2),
+          refunded_quantity: refunded.quantity,
+          refunded_price: parseFloat((refunded.subtotal || 0) / refunded.quantity).toFixed(2),
         };
-      });
+      }).filter(item => item.title !== "Unknown");
+
     } catch (e) {
-      console.warn("Failed to fetch refunds:", e);
+      console.warn("❌ Failed to fetch refund data:", e);
     }
 
     selectedOrder.refundedItems = refundedItems;
@@ -200,6 +204,7 @@ export const action = async ({ request }) => {
     return json({ error: "Refund failed." }, { status: 500 });
   }
 };
+
 
 
 
@@ -326,53 +331,37 @@ export default function RefundPage() {
     const amount = refundMeta.amount;
 
     if (paymentMode === 'paypal') {
-      try {
-        const res = await fetch("https://phpstack-1419716-5486887.cloudwaysapps.com/paypal-refund", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ transactionId, amount }),
-        });
-
-        const data = await res.json();
-        if (!data.success) {
-          alert("❌ PayPal refund failed: " + data.message);
-          return;
-        }
-
-        const payload = preparePayload();
-        payload.variables.input.note = `Refunded via PayPal: ${data.paypalRefundId}`;
-        const formData = new FormData();
-        formData.append("body", JSON.stringify({ ...payload, mode: "refund" }));
-        fetcher.submit(formData, { method: "POST" });
-
-      } catch (err) {
-        alert("❌ PayPal refund error: " + err.message);
+      const res = await fetch("https://phpstack-1419716-5486887.cloudwaysapps.com/paypal-refund", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ transactionId, amount }),
+      });
+      const data = await res.json();
+      if (!data.success) {
+        alert("❌ PayPal refund failed: " + data.message);
         return;
       }
+      const payload = preparePayload();
+      payload.variables.input.note = `Refunded via PayPal: ${data.paypalRefundId}`;
+      const formData = new FormData();
+      formData.append("body", JSON.stringify({ ...payload, mode: "refund" }));
+      fetcher.submit(formData, { method: "POST" });
     } else if (paymentMode === 'stripe') {
-      try {
-        const res = await fetch("https://phpstack-1419716-5486887.cloudwaysapps.com/stripe-refund", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ chargeId: transactionId, amount })
-        });
-
-        const data = await res.json();
-        if (!data.success) {
-          alert("❌ Stripe refund failed: " + data.message);
-          return;
-        }
-
-        const payload = preparePayload();
-        payload.variables.input.note = `Refunded via Stripe: ${data.stripeRefundId}`;
-        const formData = new FormData();
-        formData.append("body", JSON.stringify({ ...payload, mode: "refund" }));
-        fetcher.submit(formData, { method: "POST" });
-
-      } catch (err) {
-        alert("❌ Stripe refund error: " + err.message);
+      const res = await fetch("https://phpstack-1419716-5486887.cloudwaysapps.com/stripe-refund", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chargeId: transactionId, amount })
+      });
+      const data = await res.json();
+      if (!data.success) {
+        alert("❌ Stripe refund failed: " + data.message);
         return;
       }
+      const payload = preparePayload();
+      payload.variables.input.note = `Refunded via Stripe: ${data.stripeRefundId}`;
+      const formData = new FormData();
+      formData.append("body", JSON.stringify({ ...payload, mode: "refund" }));
+      fetcher.submit(formData, { method: "POST" });
     } else {
       const formData = new FormData();
       formData.append("body", JSON.stringify({ ...preparePayload(), mode: "refund" }));
@@ -415,52 +404,54 @@ export default function RefundPage() {
                   </Card>
                 )}
 
-                <Card>
-                  <Text variant="headingMd">Order Line Items</Text>
-                  {selectedOrder.lineItems.map(item => {
-                    const existing = selectedProducts.find(p => p.id === item.id);
-                    const selectedQuantity = existing?.quantity || 0;
+                {/* ✅ Refundable Items (hide fully refunded) */}
+                <Card title="Order Line Items" sectioned>
+                  {selectedOrder.lineItems
+                    .filter(item => item.remaining_quantity > 0)
+                    .map(item => {
+                      const existing = selectedProducts.find(p => p.id === item.id);
+                      const selectedQuantity = existing?.quantity || 0;
 
-                    return (
-                      <Box key={item.id} display="flex" alignItems="center" paddingBlock="300">
-                        <Thumbnail
-                          source={item.image?.originalSrc || "https://cdn.shopify.com/s/files/1/0752/6435/6351/files/no-image-icon.png"}
-                          alt={item.image?.altText || "Product image"}
-                          size="small"
-                        />
-                        <Box paddingInlineStart="300" flexGrow={1}>
-                          <Text fontWeight="bold">{item.title}</Text>
-                          <Text variant="bodySm">{item.sku}</Text>
-                          <Text variant="bodySm">
-                            ${item.discountedUnitPriceSet.shopMoney.amount} × {item.quantity}
-                          </Text>
+                      return (
+                        <Box key={item.id} display="flex" alignItems="center" paddingBlock="300">
+                          <Thumbnail
+                            source={item.image?.originalSrc || "https://cdn.shopify.com/s/files/1/0752/6435/6351/files/no-image-icon.png"}
+                            alt={item.image?.altText || "Product image"}
+                            size="small"
+                          />
+                          <Box paddingInlineStart="300" flexGrow={1}>
+                            <Text fontWeight="bold">{item.title}</Text>
+                            <Text variant="bodySm">{item.sku}</Text>
+                            <Text variant="bodySm">
+                              ${item.discountedUnitPriceSet.shopMoney.amount} × {item.remaining_quantity}
+                            </Text>
+                          </Box>
+                          <input
+                            type="number"
+                            min="0"
+                            max={item.remaining_quantity}
+                            value={selectedQuantity}
+                            onChange={(e) => {
+                              const qty = parseInt(e.target.value) || 0;
+                              setSelectedProducts(prev => {
+                                const withoutThis = prev.filter(p => p.id !== item.id);
+                                if (qty > 0) {
+                                  return [...withoutThis, {
+                                    id: item.id,
+                                    title: item.title,
+                                    quantity: qty,
+                                    price: item.discountedUnitPriceSet.shopMoney.amount
+                                  }];
+                                } else {
+                                  return withoutThis;
+                                }
+                              });
+                            }}
+                            style={{ width: "50px", marginLeft: "10px" }}
+                          />
                         </Box>
-                        <input
-                          type="number"
-                          min="0"
-                          max={item.quantity}
-                          value={selectedQuantity}
-                          onChange={(e) => {
-                            const qty = parseInt(e.target.value) || 0;
-                            setSelectedProducts(prev => {
-                              const withoutThis = prev.filter(p => p.id !== item.id);
-                              if (qty > 0) {
-                                return [...withoutThis, {
-                                  id: item.id,
-                                  title: item.title,
-                                  quantity: qty,
-                                  price: item.discountedUnitPriceSet.shopMoney.amount
-                                }];
-                              } else {
-                                return withoutThis;
-                              }
-                            });
-                          }}
-                          style={{ width: "50px", marginLeft: "10px" }}
-                        />
-                      </Box>
-                    );
-                  })}
+                      );
+                    })}
                 </Card>
 
                 <Card title="Refund Shipping" sectioned>
@@ -587,6 +578,7 @@ export default function RefundPage() {
     </Page>
   );
 }
+
 
 
 
