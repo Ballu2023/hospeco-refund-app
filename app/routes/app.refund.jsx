@@ -164,6 +164,7 @@ export const action = async ({ request }) => {
 
 // ✅ app/routes/app.refund.jsx — Full Remix UI Code (Polaris + Refund Logic)
 
+// ✅ app/routes/app.refund.jsx
 import {
   Page, Layout, Card, Text, Box, Button, TextField,
   IndexTable, Pagination, Thumbnail, Grid
@@ -208,6 +209,7 @@ export default function RefundPage() {
     }
   }, [fetcher.data]);
 
+  // ✅ Fetch refund history
   useEffect(() => {
     const fetchRefundHistory = async () => {
       if (!selectedOrder) return;
@@ -226,6 +228,30 @@ export default function RefundPage() {
     };
     fetchRefundHistory();
   }, [selectedOrder]);
+
+  // ✅ Adjust refunded quantities or hide fully refunded products
+  useEffect(() => {
+    if (!refundHistory || !selectedOrder) return;
+
+    const refundedMap = {};
+    refundHistory.forEach(refund => {
+      refund.refund_line_items.forEach(refItem => {
+        const lineId = refItem.line_item.id;
+        refundedMap[lineId] = (refundedMap[lineId] || 0) + refItem.quantity;
+      });
+    });
+
+    const updatedLineItems = selectedOrder.lineItems
+      .map(item => {
+        const refundedQty = refundedMap[item.id] || 0;
+        const remainingQty = item.quantity - refundedQty;
+        if (remainingQty <= 0) return null;
+        return { ...item, quantity: remainingQty };
+      })
+      .filter(Boolean);
+
+    selectedOrder.lineItems = updatedLineItems;
+  }, [refundHistory, selectedOrder]);
 
   const updatePage = (newPage) => {
     const params = new URLSearchParams(searchParams);
@@ -298,7 +324,7 @@ export default function RefundPage() {
     const transactionId = metafields?.transaction_id_number;
     const amount = refundMeta.amount;
 
-       if (paymentMode === 'paypal') {
+        if (paymentMode === 'paypal') {
       try {
         const res = await fetch("https://phpstack-1419716-5486887.cloudwaysapps.com/paypal-refund", {
           method: "POST",
@@ -366,6 +392,7 @@ export default function RefundPage() {
             <Button onClick={goBack}>&larr; Back to Order List</Button>
             <Grid>
               <Grid.Cell columnSpan={{ xs: 6, sm: 8 }}>
+                {/* ✅ Line Items */}
                 <Card>
                   <Text variant="headingMd">Order Line Items</Text>
                   {selectedOrder.lineItems.map(item => {
@@ -413,6 +440,7 @@ export default function RefundPage() {
                   })}
                 </Card>
 
+                {/* ✅ Shipping */}
                 <Card title="Refund Shipping" sectioned>
                   <Box display="flex" alignItems="center" gap="300">
                     <input
@@ -431,6 +459,7 @@ export default function RefundPage() {
                   </Box>
                 </Card>
 
+                {/* ✅ Reason */}
                 <Card title="Reason for Refund" sectioned>
                   <TextField
                     value={reasonForRefund}
@@ -468,13 +497,12 @@ export default function RefundPage() {
                         </Box>
                         {refund.refund_line_items.map((item, itemIndex) => {
                           const line = item.line_item;
-                          const imageUrl = `https://cdn.shopify.com/s/files/1/0752/6435/6351/files/no-image-icon.png`;
                           return (
                             <Box key={itemIndex} paddingBlock="200" borderBottom display="flex" gap="300">
-                              <img src={imageUrl} alt={line?.title} width={60} height={60} style={{ borderRadius: 4, objectFit: 'cover' }} />
+                              <img src="https://cdn.shopify.com/s/files/1/0752/6435/6351/files/no-image-icon.png" width={60} height={60} />
                               <Box>
-                                <Text fontWeight="bold">{line?.title || "Untitled Product"}</Text>
-                                <Text>SKU: {line?.sku || "N/A"}</Text>
+                                <Text fontWeight="bold">{line?.title}</Text>
+                                <Text>SKU: {line?.sku}</Text>
                                 <Text>Quantity Refunded: {item.quantity}</Text>
                                 <Text>Amount Refunded: ${parseFloat(item.subtotal || 0).toFixed(2)}</Text>
                                 <Text>Tax: ${parseFloat(item.total_tax || 0).toFixed(2)}</Text>
@@ -594,6 +622,7 @@ export default function RefundPage() {
     </Page>
   );
 }
+
 
 
 
