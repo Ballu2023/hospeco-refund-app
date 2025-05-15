@@ -1,4 +1,3 @@
-// ✅ PART 1 — Loader and Action Logic
 import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 
@@ -80,44 +79,45 @@ export const loader = async ({ request }) => {
           metafields[node.key] = node.value;
         });
 
-        const rawLineItems = node.lineItems.edges.map(({ node }) => node);
-        let adjustedLineItems = rawLineItems;
+        // default raw lineItems
+        let lineItems = node.lineItems.edges.map(({ node }) => node);
 
-        // ✅ Only fetch refund history and filter line items if this is the selected order
-        if (selectedOrderId && selectedOrderId === node.id) {
+        // ✅ If this is the selected order, fetch refund data and filter
+        const selectedOrderNum = selectedOrderId?.split("/").pop();
+        if (selectedOrderNum === orderIdNum) {
           try {
-            const res = await fetch(`https://phpstack-1419716-5486887.cloudwaysapps.com/refunds/${orderIdNum}`);
-            const refundData = await res.json();
-            const refundHistory = refundData.refunds || [];
+            const refundRes = await fetch(`https://phpstack-1419716-5486887.cloudwaysapps.com/refunds/${orderIdNum}`);
+            const refundJson = await refundRes.json();
 
             const refundedMap = {};
-            refundHistory.forEach(refund => {
+            refundJson.refunds?.forEach(refund => {
               refund.refund_line_items.forEach(refItem => {
-                const lineId = refItem.line_item?.id;
-                if (lineId) {
-                  refundedMap[lineId] = (refundedMap[lineId] || 0) + refItem.quantity;
+                const plainId = refItem.line_item_id?.toString();
+                if (plainId) {
+                  refundedMap[plainId] = (refundedMap[plainId] || 0) + refItem.quantity;
                 }
               });
             });
 
-            adjustedLineItems = rawLineItems
+            // ✅ Adjust line items based on refunded quantity
+            lineItems = lineItems
               .map(item => {
-                const refundedQty = refundedMap[item.id] || 0;
+                const itemIdPlain = item.id.split("/").pop();
+                const refundedQty = refundedMap[itemIdPlain] || 0;
                 const remainingQty = item.quantity - refundedQty;
                 if (remainingQty <= 0) return null;
                 return { ...item, quantity: remainingQty };
               })
               .filter(Boolean);
-
           } catch (err) {
-            console.error("Error fetching refund history for selected order:", err);
+            console.error("❌ Failed to fetch refund data:", err);
           }
         }
 
         allOrders.push({
           ...node,
           cursor,
-          lineItems: adjustedLineItems,
+          lineItems,
           orderId: orderIdNum,
           transactionId,
           gateway,
@@ -145,51 +145,6 @@ export const loader = async ({ request }) => {
   return json({ orders: paginatedOrders, total: filteredOrders.length, page, selectedOrder });
 };
 
-export const action = async ({ request }) => {
-  try {
-    const formData = await request.formData();
-    const body = JSON.parse(formData.get("body") || "{}");
-    const isCalculation = body.mode === "calculate";
-    const input = body.variables.input;
-    const orderId = input.orderId.split("/").pop();
-
-    const payload = {
-      refund: {
-        refund_line_items: input.refundLineItems.map(item => ({
-          line_item_id: item.lineItemId.split("/").pop(),
-          quantity: item.quantity,
-        })),
-        shipping: input.shipping ? { amount: input.shipping.amount } : undefined,
-        currency: "AUD",
-        notify: input.notifyCustomer,
-        note: input.note || "Refund via app",
-        transactions: isCalculation ? undefined : [{
-          parent_id: input.transactionId,
-          amount: input.totalAmount,
-          kind: "refund",
-          gateway: input.gateway,
-        }],
-      }
-    };
-
-    const endpoint = isCalculation
-      ? "https://phpstack-1419716-5486887.cloudwaysapps.com/calculate"
-      : "https://phpstack-1419716-5486887.cloudwaysapps.com/refund";
-
-    const res = await fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ orderId, payload }),
-    });
-
-    const result = await res.json();
-    if (!res.ok) throw new Error(result.error || "Failed");
-    return json(result);
-  } catch (err) {
-    console.error("❌ Refund Error:", err);
-    return json({ error: "Refund failed." }, { status: 500 });
-  }
-};
 
 
 
