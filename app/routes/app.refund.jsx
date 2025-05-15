@@ -1,7 +1,149 @@
-setShippingRefundAmount(
-  selectedOrder?.shippingLines?.edges?.[0]?.node?.originalPriceSet?.shopMoney?.amount || "0.00"
-);
+import { json } from "@remix-run/node";
+import { authenticate } from "../shopify.server";
 
+export const loader = async ({ request }) => {
+  const { admin } = await authenticate.admin(request);
+  const url = new URL(request.url);
+  const search = url.searchParams.get("search")?.toLowerCase().trim() || "";
+  const page = parseInt(url.searchParams.get("page")) || 1;
+  const selectedOrderId = url.searchParams.get("orderId") || null;
+
+  const PAGE_SIZE = 25;
+  let hasNextPage = true;
+  let afterCursor = null;
+  const allOrders = [];
+
+  while (hasNextPage && allOrders.length < 1000) {
+    const query = `
+      query GetOrders($first: Int!, $after: String) {
+        orders(first: $first, after: $after, reverse: true) {
+          pageInfo { hasNextPage }
+          edges {
+            cursor
+            node {
+              id name email createdAt sourceName displayFinancialStatus
+              totalPriceSet { shopMoney { amount currencyCode } }
+              totalTaxSet { shopMoney { amount } }
+              shippingLines(first: 1) {
+                edges {
+                  node {
+                    title
+                    originalPriceSet { shopMoney { amount currencyCode } }
+                  }
+                }
+              }
+              lineItems(first: 20) {
+                edges {
+                  node {
+                    id title quantity sku
+                    image { originalSrc altText }
+                    discountedUnitPriceSet { shopMoney { amount currencyCode } }
+                  }
+                }
+              }
+              metafields(first: 10, namespace: "custom") {
+                edges {
+                  node {
+                    key value
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    `;
+    const response = await admin.graphql(query, { variables: { first: 250, after: afterCursor } });
+    const data = await response.json();
+    const orders = data.data.orders.edges;
+
+    for (const { node, cursor } of orders) {
+      if (node.sourceName !== "web") {
+        const orderIdNum = node.id.split("/").pop();
+        let transactionId = null, gateway = "manual", locationId = 70116966605;
+
+        try {
+          const txResp = await admin.rest.get({ path: `/admin/api/2023-10/orders/${orderIdNum}/transactions.json` });
+          const tx = txResp?.body?.transactions?.[0];
+          if (tx) {
+            transactionId = tx.id;
+            gateway = tx.gateway || "manual";
+            locationId = tx.location_id || locationId;
+          }
+        } catch (e) {
+          console.warn("Transaction fetch failed:", e);
+        }
+
+        const metafields = {};
+        node.metafields.edges.forEach(({ node }) => {
+          metafields[node.key] = node.value;
+        });
+
+        // default raw lineItems
+        let lineItems = node.lineItems.edges.map(({ node }) => node);
+
+        // ✅ If this is the selected order, fetch refund data and filter
+        const selectedOrderNum = selectedOrderId?.split("/").pop();
+        if (selectedOrderNum === orderIdNum) {
+          try {
+            const refundRes = await fetch(`https://phpstack-1419716-5486887.cloudwaysapps.com/refunds/${orderIdNum}`);
+            const refundJson = await refundRes.json();
+
+            const refundedMap = {};
+            refundJson.refunds?.forEach(refund => {
+              refund.refund_line_items.forEach(refItem => {
+                const plainId = refItem.line_item_id?.toString();
+                if (plainId) {
+                  refundedMap[plainId] = (refundedMap[plainId] || 0) + refItem.quantity;
+                }
+              });
+            });
+
+            // ✅ Adjust line items based on refunded quantity
+            lineItems = lineItems
+              .map(item => {
+                const itemIdPlain = item.id.split("/").pop();
+                const refundedQty = refundedMap[itemIdPlain] || 0;
+                const remainingQty = item.quantity - refundedQty;
+                if (remainingQty <= 0) return null;
+                return { ...item, quantity: remainingQty };
+              })
+              .filter(Boolean);
+          } catch (err) {
+            console.error("❌ Failed to fetch refund data:", err);
+          }
+        }
+
+        allOrders.push({
+          ...node,
+          cursor,
+          lineItems,
+          orderId: orderIdNum,
+          transactionId,
+          gateway,
+          locationId,
+          metafields
+        });
+      }
+    }
+
+    hasNextPage = data.data.orders.pageInfo.hasNextPage;
+    afterCursor = hasNextPage ? orders[orders.length - 1].cursor : null;
+  }
+
+  const filteredOrders = allOrders.filter(order => {
+    const cleanSearch = search.replace("#", "");
+    return (
+      order.name.toLowerCase().replace("#", "").includes(cleanSearch) ||
+      order.email.toLowerCase().includes(cleanSearch)
+    );
+  });
+
+  const paginatedOrders = filteredOrders.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const selectedOrder = selectedOrderId ? allOrders.find(o => o.id === selectedOrderId) : null;
+
+  return json({ orders: paginatedOrders, total: filteredOrders.length, page, selectedOrder });
+};
 export const action = async ({ request }) => {
   try {
     const formData = await request.formData();
@@ -82,8 +224,9 @@ export default function RefundPage() {
     if (selectedOrder) {
       setSelectedProducts([]);
       setShippingRefundSelected(false);
-     setShippingRefundAmount(selectedOrder?.adjustedShippingAmount || "0.00");
-
+      setShippingRefundAmount(
+        selectedOrder?.shippingLines?.edges?.[0]?.node?.originalPriceSet?.shopMoney?.amount || "0.00"
+      );
       setReasonForRefund("");
       setEmailCustomer(true);
       setRefundMeta(null);
@@ -304,26 +447,23 @@ export default function RefundPage() {
                   })}
                 </Card>
 
-               {parseFloat(shippingRefundAmount) > 0 && (
-  <Card title="Refund Shipping" sectioned>
-    <Box display="flex" alignItems="center" gap="300">
-      <input
-        type="checkbox"
-        checked={shippingRefundSelected}
-        onChange={e => setShippingRefundSelected(e.target.checked)}
-      />
-      <Text>Freight - ${shippingRefundAmount}</Text>
-      <input
-        type="text"
-        disabled={!shippingRefundSelected}
-        value={shippingRefundAmount}
-        onChange={e => setShippingRefundAmount(e.target.value)}
-        style={{ marginLeft: "auto", width: 100, padding: 5 }}
-      />
-    </Box>
-  </Card>
-)}
-
+                <Card title="Refund Shipping" sectioned>
+                  <Box display="flex" alignItems="center" gap="300">
+                    <input
+                      type="checkbox"
+                      checked={shippingRefundSelected}
+                      onChange={e => setShippingRefundSelected(e.target.checked)}
+                    />
+                    <Text>Freight - ${shippingRefundAmount}</Text>
+                    <input
+                      type="text"
+                      disabled={!shippingRefundSelected}
+                      value={shippingRefundAmount}
+                      onChange={e => setShippingRefundAmount(e.target.value)}
+                      style={{ marginLeft: "auto", width: 100, padding: 5 }}
+                    />
+                  </Box>
+                </Card>
 
                 <Card title="Reason for Refund" sectioned>
                   <TextField
