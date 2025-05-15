@@ -312,52 +312,12 @@ useEffect(() => {
     setSearchParams(params);
   };
 
-// ✅ Safe: calculate subtotal from selected products
-const productSubtotal = selectedProducts.reduce(
-  (sum, item) => sum + (parseFloat(item.price) * item.quantity), 0
-);
-
-// ✅ Safe: calculate full subtotal from order line items (if selectedOrder exists)
-const fullSubtotal = selectedOrder?.lineItems?.length
-  ? selectedOrder.lineItems.reduce(
-      (sum, item) =>
-        sum + parseFloat(item.discountedUnitPriceSet?.shopMoney?.amount || 0) * item.quantity,
-      0
-    )
-  : 0;
-
-// ✅ Safe: get full order-level tax
-const fullOrderTax = parseFloat(selectedOrder?.totalTaxSet?.shopMoney?.amount || 0);
-
-// ✅ Safe: get full shipping amount
-const fullShipping = parseFloat(
-  selectedOrder?.shippingLines?.edges?.[0]?.node?.originalPriceSet?.shopMoney?.amount || "0"
-);
-
-// ✅ NEW: get actual shipping tax from Shopify shipping tax line (if exists)
-const shippingTaxValue = parseFloat(
-  selectedOrder?.shippingLines?.edges?.[0]?.node?.taxLines?.[0]?.price || "0"
-);
-
-// ✅ If shipping refund selected, use shipping tax. Else zero.
-const shippingTax = shippingRefundSelected ? shippingTaxValue : 0;
-
-// ✅ Product tax = remaining tax * (selectedSubtotal / fullSubtotal)
-const productTax = productSubtotal > 0 && fullSubtotal > 0
-  ? (fullOrderTax - shippingTaxValue) * (productSubtotal / fullSubtotal)
-  : 0;
-
-// ✅ Final tax amount = shipping + product tax
-const taxAmount = productTax + shippingTax;
-
-// ✅ Shipping refund (already selected via checkbox)
-const shippingRefundValue = shippingRefundSelected
-  ? parseFloat(shippingRefundAmount || 0)
-  : 0;
-
-// ✅ Total refund = subtotal + tax + shipping refund
-const refundTotal = productSubtotal + taxAmount + shippingRefundValue;
-
+  const productSubtotal = selectedProducts.reduce(
+    (sum, item) => sum + (parseFloat(item.price) * item.quantity), 0
+  );
+  const taxAmount = parseFloat(selectedOrder?.totalTaxSet?.shopMoney?.amount || 0);
+  const shippingRefundValue = shippingRefundSelected ? parseFloat(shippingRefundAmount || 0) : 0;
+  const refundTotal = productSubtotal + taxAmount + shippingRefundValue;
 
   const preparePayload = () => ({
     mode: refundMeta ? "refund" : "calculate",
