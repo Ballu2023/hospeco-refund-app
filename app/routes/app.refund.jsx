@@ -38,23 +38,21 @@ export const loader = async ({ request }) => {
                   }
                 }
               }
-              lineItems(first: 20) {
-                edges {
-                  node {
-                    id title quantity sku
-                    image { originalSrc altText }
-                    discountedUnitPriceSet { shopMoney { amount currencyCode } }
-                  }
-                }
-              }
-              metafields(first: 10, namespace: "custom") {
-                edges {
-                  node {
-                    key value
-                  }
-                }
-              }
-            }
+             lineItems(first: 20) {
+  edges {
+    node {
+      id title quantity sku
+      image { originalSrc altText }
+      discountedUnitPriceSet { shopMoney { amount currencyCode } }
+      taxLines {
+        price
+        rate
+        title
+      }
+    }
+  }
+}
+
           }
         }
       }
@@ -312,12 +310,49 @@ useEffect(() => {
     setSearchParams(params);
   };
 
-  const productSubtotal = selectedProducts.reduce(
-    (sum, item) => sum + (parseFloat(item.price) * item.quantity), 0
-  );
-  const taxAmount = parseFloat(selectedOrder?.totalTaxSet?.shopMoney?.amount || 0);
-  const shippingRefundValue = shippingRefundSelected ? parseFloat(shippingRefundAmount || 0) : 0;
-  const refundTotal = productSubtotal + taxAmount + shippingRefundValue;
+// ✅ Subtotal of selected products
+const productSubtotal = selectedProducts.reduce(
+  (sum, item) => sum + (parseFloat(item.price) * item.quantity), 0
+);
+
+// ✅ Shipping refund amount
+const shippingRefundValue = shippingRefundSelected
+  ? parseFloat(shippingRefundAmount || 0)
+  : 0;
+
+// ✅ Get shipping tax from taxLines in GraphQL
+const shippingTaxValue = parseFloat(
+  selectedOrder?.shippingLines?.edges?.[0]?.node?.taxLines?.[0]?.price || "0"
+);
+const shippingTax = shippingRefundSelected ? shippingTaxValue : 0;
+
+// ✅ Calculate product tax from selected line items (requires taxLines in GraphQL)
+let productTax = 0;
+if (selectedOrder && selectedProducts.length > 0) {
+  const productMap = {};
+  selectedProducts.forEach(p => {
+    productMap[p.id] = p.quantity;
+  });
+
+  selectedOrder.lineItems?.forEach(item => {
+    const selectedQty = productMap[item.id] || 0;
+    if (selectedQty > 0 && Array.isArray(item.taxLines)) {
+      const taxLines = item.taxLines;
+      taxLines.forEach(tax => {
+        const lineTaxTotal = parseFloat(tax.price || 0);
+        const taxPerUnit = lineTaxTotal / item.quantity;
+        productTax += taxPerUnit * selectedQty;
+      });
+    }
+  });
+}
+
+// ✅ Final tax total
+const taxAmount = productTax + shippingTax;
+
+// ✅ Final refund amount
+const refundTotal = productSubtotal + taxAmount + shippingRefundValue;
+
 
   const preparePayload = () => ({
     mode: refundMeta ? "refund" : "calculate",
