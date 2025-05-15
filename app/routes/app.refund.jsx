@@ -144,7 +144,51 @@ export const loader = async ({ request }) => {
 
   return json({ orders: paginatedOrders, total: filteredOrders.length, page, selectedOrder });
 };
+export const action = async ({ request }) => {
+  try {
+    const formData = await request.formData();
+    const body = JSON.parse(formData.get("body") || "{}");
+    const isCalculation = body.mode === "calculate";
+    const input = body.variables.input;
+    const orderId = input.orderId.split("/").pop();
 
+    const payload = {
+      refund: {
+        refund_line_items: input.refundLineItems.map(item => ({
+          line_item_id: item.lineItemId.split("/").pop(),
+          quantity: item.quantity,
+        })),
+        shipping: input.shipping ? { amount: input.shipping.amount } : undefined,
+        currency: "AUD",
+        notify: input.notifyCustomer,
+        note: input.note || "Refund via app",
+        transactions: isCalculation ? undefined : [{
+          parent_id: input.transactionId,
+          amount: input.totalAmount,
+          kind: "refund",
+          gateway: input.gateway,
+        }],
+      }
+    };
+
+    const endpoint = isCalculation
+      ? "https://phpstack-1419716-5486887.cloudwaysapps.com/calculate"
+      : "https://phpstack-1419716-5486887.cloudwaysapps.com/refund";
+
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ orderId, payload }),
+    });
+
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error || "Failed");
+    return json(result);
+  } catch (err) {
+    console.error("❌ Refund Error:", err);
+    return json({ error: "Refund failed." }, { status: 500 });
+  }
+};
 
 
 
