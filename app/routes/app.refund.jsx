@@ -80,10 +80,44 @@ export const loader = async ({ request }) => {
           metafields[node.key] = node.value;
         });
 
+        const rawLineItems = node.lineItems.edges.map(({ node }) => node);
+        let adjustedLineItems = rawLineItems;
+
+        // ✅ Only fetch refund history and filter line items if this is the selected order
+        if (selectedOrderId && selectedOrderId === node.id) {
+          try {
+            const res = await fetch(`https://phpstack-1419716-5486887.cloudwaysapps.com/refunds/${orderIdNum}`);
+            const refundData = await res.json();
+            const refundHistory = refundData.refunds || [];
+
+            const refundedMap = {};
+            refundHistory.forEach(refund => {
+              refund.refund_line_items.forEach(refItem => {
+                const lineId = refItem.line_item?.id;
+                if (lineId) {
+                  refundedMap[lineId] = (refundedMap[lineId] || 0) + refItem.quantity;
+                }
+              });
+            });
+
+            adjustedLineItems = rawLineItems
+              .map(item => {
+                const refundedQty = refundedMap[item.id] || 0;
+                const remainingQty = item.quantity - refundedQty;
+                if (remainingQty <= 0) return null;
+                return { ...item, quantity: remainingQty };
+              })
+              .filter(Boolean);
+
+          } catch (err) {
+            console.error("Error fetching refund history for selected order:", err);
+          }
+        }
+
         allOrders.push({
           ...node,
           cursor,
-          lineItems: node.lineItems.edges.map(({ node }) => node),
+          lineItems: adjustedLineItems,
           orderId: orderIdNum,
           transactionId,
           gateway,
