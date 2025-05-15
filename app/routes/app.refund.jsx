@@ -224,9 +224,8 @@ export default function RefundPage() {
     if (selectedOrder) {
       setSelectedProducts([]);
       setShippingRefundSelected(false);
-      setShippingRefundAmount(
-        selectedOrder?.shippingLines?.edges?.[0]?.node?.originalPriceSet?.shopMoney?.amount || "0.00"
-      );
+      setShippingRefundAmount(selectedOrder?.adjustedShippingAmount || "0.00");
+
       setReasonForRefund("");
       setEmailCustomer(true);
       setRefundMeta(null);
@@ -447,23 +446,26 @@ export default function RefundPage() {
                   })}
                 </Card>
 
-                <Card title="Refund Shipping" sectioned>
-                  <Box display="flex" alignItems="center" gap="300">
-                    <input
-                      type="checkbox"
-                      checked={shippingRefundSelected}
-                      onChange={e => setShippingRefundSelected(e.target.checked)}
-                    />
-                    <Text>Freight - ${shippingRefundAmount}</Text>
-                    <input
-                      type="text"
-                      disabled={!shippingRefundSelected}
-                      value={shippingRefundAmount}
-                      onChange={e => setShippingRefundAmount(e.target.value)}
-                      style={{ marginLeft: "auto", width: 100, padding: 5 }}
-                    />
-                  </Box>
-                </Card>
+             {parseFloat(shippingRefundAmount) > 0 && (
+  <Card title="Refund Shipping" sectioned>
+    <Box display="flex" alignItems="center" gap="300">
+      <input
+        type="checkbox"
+        checked={shippingRefundSelected}
+        onChange={e => setShippingRefundSelected(e.target.checked)}
+      />
+      <Text>Freight - ${shippingRefundAmount}</Text>
+      <input
+        type="text"
+        disabled={!shippingRefundSelected}
+        value={shippingRefundAmount}
+        onChange={e => setShippingRefundAmount(e.target.value)}
+        style={{ marginLeft: "auto", width: 100, padding: 5 }}
+      />
+    </Box>
+  </Card>
+)}
+
 
                 <Card title="Reason for Refund" sectioned>
                   <TextField
