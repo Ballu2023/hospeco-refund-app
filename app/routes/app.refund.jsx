@@ -35,11 +35,7 @@ export const loader = async ({ request }) => {
                   node {
                     title
                     originalPriceSet { shopMoney { amount currencyCode } }
-                    taxLines {
-                      price
-                      rate
-                      title
-                    }
+                    taxLines { price rate title }
                   }
                 }
               }
@@ -49,11 +45,7 @@ export const loader = async ({ request }) => {
                     id title quantity sku
                     image { originalSrc altText }
                     discountedUnitPriceSet { shopMoney { amount currencyCode } }
-                    taxLines {
-                      price
-                      rate
-                      title
-                    }
+                    taxLines { price rate title }
                   }
                 }
               }
@@ -72,6 +64,12 @@ export const loader = async ({ request }) => {
 
     const response = await admin.graphql(query, { variables: { first: 250, after: afterCursor } });
     const data = await response.json();
+
+    if (!data?.data) {
+      console.error("❌ GraphQL Error:", JSON.stringify(data, null, 2));
+      throw new Error("Failed to fetch orders");
+    }
+
     const orders = data.data.orders.edges;
 
     for (const { node, cursor } of orders) {
@@ -209,7 +207,6 @@ export const action = async ({ request }) => {
     return json({ error: "Refund failed." }, { status: 500 });
   }
 };
-
 
 
 
@@ -474,278 +471,147 @@ function formatDate(dateStr) {
 
 
   return (
-    <Page fullWidth>
-      <div style={{ padding: 20 }}>
-        {selectedOrder ? (
-          <>
-<Box paddingBlockEnd="300" display="flex" flexDirection="column" gap="200">
-  <Box display="flex" alignItems="center" gap="400">
-    <Text variant="headingLg" fontWeight="bold">
-      #{selectedOrder?.name?.replace("#", "")} • Refund
-    </Text>
+  <Page fullWidth>
+    <div style={{ padding: 20 }}>
+      {selectedOrder ? (
+        <>
+          {/* Header */}
+          <Box display="flex" justifyContent="space-between" alignItems="center" padding="400">
+            <Box display="flex" alignItems="center" gap="300">
+              <Text variant="headingLg" fontWeight="bold">
+                #{selectedOrder?.name?.replace("#", "")}
+              </Text>
+              <Box style={{ backgroundColor: "#fff6d8", padding: "4px 12px", borderRadius: 8 }}>
+                <Text fontWeight="medium" color="warning">
+                  Unfulfilled
+                </Text>
+              </Box>
+            </Box>
+            <Box>
+              <Text fontWeight="medium">{selectedOrder?.customerName || "Customer"}</Text>
+            </Box>
+          </Box>
 
-    {/* ✅ Optional Shopify-like status */}
-    {selectedOrder?.displayFinancialStatus && (
-      <Box paddingInlineStart="300">
-        <div
-          style={{
-            backgroundColor: "#f0f1f2",
-            borderRadius: "9999px",
-            padding: "2px 10px",
-            fontSize: "13px",
-            color: "#444",
-            display: "inline-block",
-          }}
-        >
-          {selectedOrder.displayFinancialStatus}
-        </div>
-      </Box>
-    )}
-  </Box>
-
-  <Box>
-    <Button plain onClick={goBack}>
-      &larr; Back to Order List
-    </Button>
-  </Box>
-</Box>
-            <Grid>
-              <Grid.Cell columnSpan={{ xs: 6, sm: 8 }}>
-                <Card>
-                  <Text variant="headingMd">Order Line Items</Text>
-                  {selectedOrder.lineItems.map(item => {
-                    const existing = selectedProducts.find(p => p.id === item.id);
-                    const selectedQuantity = existing?.quantity || 0;
-                    return (
-                      <Box key={item.id} display="flex" alignItems="center" paddingBlock="300">
-                        <Thumbnail
-                          source={item.image?.originalSrc || "https://cdn.shopify.com/s/files/1/0752/6435/6351/files/no-image-icon.png"}
-                          alt={item.image?.altText || "Product image"}
-                          size="small"
-                        />
-                        <Box paddingInlineStart="300" flexGrow={1}>
-                          <Text fontWeight="bold">{item.title}</Text>
-                          <Text variant="bodySm">{item.sku}</Text>
-                          <Text variant="bodySm">
-                            ${item.discountedUnitPriceSet.shopMoney.amount} × {item.quantity}
-                          </Text>
-                        </Box>
-                        <input
-                          type="number"
-                          min="0"
-                          max={item.quantity}
-                          value={selectedQuantity}
-                          onChange={(e) => {
-                            const qty = parseInt(e.target.value) || 0;
-                            setSelectedProducts(prev => {
-                              const withoutThis = prev.filter(p => p.id !== item.id);
-                              if (qty > 0) {
-                                return [...withoutThis, {
-                                  id: item.id,
-                                  title: item.title,
-                                  quantity: qty,
-                                  price: item.discountedUnitPriceSet.shopMoney.amount
-                                }];
-                              } else {
-                                return withoutThis;
-                              }
-                            });
-                          }}
-                          style={{ width: "50px", marginLeft: "10px" }}
-                        />
-                      </Box>
-                    );
-                  })}
-                </Card>
-
-              <Card title="Refund Shipping" sectioned>
-  {parseFloat(shippingRefundAmount) > 0 ? (
-    <Box display="flex" alignItems="center" gap="300">
-      <input
-        type="checkbox"
-        checked={shippingRefundSelected}
-        onChange={e => setShippingRefundSelected(e.target.checked)}
-      />
-      <Text>Freight - Max Refundable: ${shippingRefundAmount}</Text>
-      <input
-        type="text"
-        disabled={!shippingRefundSelected}
-        value={shippingRefundAmount}
-        onChange={e => setShippingRefundAmount(e.target.value)}
-        style={{ marginLeft: "auto", width: 100, padding: 5 }}
-      />
-    </Box>
-  ) : (
-    <Text color="subdued">Shipping has already been fully refunded.</Text>
-  )}
-</Card>
-
-
-                <Card title="Reason for Refund" sectioned>
-                  <TextField
-                    value={reasonForRefund}
-                    onChange={setReasonForRefund}
-                    multiline={2}
-                    placeholder="Only you and staff can see this reason"
+          {/* Line Items */}
+          <Card>
+            {selectedOrder.lineItems.map((item) => {
+              const selectedQty = selectedProducts.find(p => p.id === item.id)?.quantity || 0;
+              return (
+                <Box key={item.id} borderBottom padding="400" display="flex" alignItems="center">
+                  <img
+                    src={item.image?.originalSrc || "https://cdn.shopify.com/s/files/1/0752/6435/6351/files/no-image-icon.png"}
+                    width={60}
+                    height={60}
+                    style={{ borderRadius: 8, objectFit: "cover", border: "1px solid #eee" }}
                   />
-                </Card>
+                  <Box paddingInlineStart="400" flexGrow={1}>
+                    <Text fontWeight="bold">{item.title}</Text>
+                    <Text variant="bodySm">{item.sku}</Text>
+                    <Text variant="bodySm">${item.discountedUnitPriceSet.shopMoney.amount} × {item.quantity}</Text>
+                    <Text color="subdued" fontSize="12px">Refunded items will be removed from the order</Text>
+                  </Box>
+                  <Box>
+                    <input
+                      type="number"
+                      min="0"
+                      max={item.quantity}
+                      value={selectedQty}
+                      onChange={(e) => {
+                        const qty = parseInt(e.target.value) || 0;
+                        setSelectedProducts(prev => {
+                          const rest = prev.filter(p => p.id !== item.id);
+                          return qty > 0 ? [...rest, { id: item.id, title: item.title, quantity: qty, price: item.discountedUnitPriceSet.shopMoney.amount }] : rest;
+                        });
+                      }}
+                      style={{
+                        width: "60px",
+                        height: "36px",
+                        borderRadius: "8px",
+                        border: "1px solid #d9d9d9",
+                        textAlign: "center",
+                        fontSize: "14px"
+                      }}
+                    />
+                    <div style={{ fontSize: "14px", textAlign: "center", marginTop: 4 }}> / {item.quantity}</div>
+                  </Box>
+                </Box>
+              );
+            })}
+          </Card>
 
-                {/* ✅ Refund History Section */}
-                <Card title="Refunded Items" sectioned>
-                  {loadingHistory ? (
-                    <Box paddingBlockStart="200">
-                      <Text>Loading refund history...</Text>
-                    </Box>
-                  ) : refundHistory && refundHistory.length > 0 ? (
-                    refundHistory.map((refund, refundIndex) => (
-                      <div key={refundIndex}>
-                        <Box paddingBlock="100">
-                          <Text fontWeight="bold">Refund Date:</Text>
-                          <Text>{new Date(refund.created_at).toLocaleString()}</Text>
-                          {refund.note && (
-                            <Box paddingBlockStart="100">
-                              <Text fontWeight="bold">Note:</Text>
-                              <Text>{refund.note}</Text>
-                            </Box>
-                          )}
-                          {refund.transactions?.[0]?.id && (
-                            <Box paddingBlockStart="100">
-                              <Text fontWeight="bold">Transaction ID:</Text>
-                              <Text>{refund.transactions[0].id}</Text>
-                              <Text>Gateway: {refund.transactions[0].gateway}</Text>
-                            </Box>
-                          )}
-                        </Box>
-                        {refund.refund_line_items.map((item, itemIndex) => {
-                          const line = item.line_item;
-                          const imageUrl = `https://cdn.shopify.com/s/files/1/0752/6435/6351/files/no-image-icon.png`;
-                          return (
-                            <Box key={itemIndex} paddingBlock="200" borderBottom display="flex" gap="300">
-                              <img src={imageUrl} alt={line?.title} width={60} height={60} style={{ borderRadius: 4, objectFit: 'cover' }} />
-                              <Box>
-                                <Text fontWeight="bold">{line?.title || "Untitled Product"}</Text>
-                                <Text>SKU: {line?.sku || "N/A"}</Text>
-                                <Text>Quantity Refunded: {item.quantity}</Text>
-                                <Text>Amount Refunded: ${parseFloat(item.subtotal || 0).toFixed(2)}</Text>
-                                <Text>Tax: ${parseFloat(item.total_tax || 0).toFixed(2)}</Text>
-                              </Box>
-                            </Box>
-                          );
-                        })}
-                        {refund.refund_shipping_lines?.length > 0 && (
-                          <Box paddingBlock="200" borderBottom>
-                            <Text fontWeight="bold">Shipping Refunded</Text>
-                            <Text>
-                              Amount: ${refund.refund_shipping_lines[0].subtotal_amount_set.shop_money.amount}
-                            </Text>
-                            <Text>
-                              Tax: ${refund.order_adjustments?.[0]?.tax_amount_set?.shop_money?.amount || "0.00"}
-                            </Text>
-                          </Box>
-                        )}
-                      </div>
-                    ))
-                  ) : (
-                    <Text color="subdued">No refund history available.</Text>
-                  )}
-                </Card>
-              </Grid.Cell>
+          {/* Refund Shipping */}
+          <Card>
+            <Box padding="400" display="flex" alignItems="center" gap="300">
+              <input
+                type="checkbox"
+                checked={shippingRefundSelected}
+                onChange={e => setShippingRefundSelected(e.target.checked)}
+                style={{ width: 18, height: 18 }}
+              />
+              <Text>Freight · ${shippingRefundAmount}</Text>
+              <input
+                type="text"
+                disabled={!shippingRefundSelected}
+                value={shippingRefundAmount}
+                onChange={e => setShippingRefundAmount(e.target.value)}
+                style={{
+                  marginLeft: "auto",
+                  width: 100,
+                  height: 36,
+                  borderRadius: "8px",
+                  border: "1px solid #d9d9d9",
+                  padding: "0 10px",
+                  textAlign: "right",
+                  fontSize: "14px"
+                }}
+              />
+            </Box>
+          </Card>
 
-              <Grid.Cell columnSpan={{ xs: 6, sm: 4 }}>
-                <Card title="Summary" sectioned>
-                  <Box display="flex" justifyContent="space-between">
-                    <Text>Item subtotal</Text>
-                    <Text>${productSubtotal.toFixed(2)}</Text>
-                  </Box>
-                  <Box display="flex" justifyContent="space-between" paddingBlockStart="100">
-                    <Text>Tax</Text>
-                    <Text>${taxAmount.toFixed(2)}</Text>
-                  </Box>
-                  <Box display="flex" justifyContent="space-between" paddingBlockStart="100">
-                    <Text>Shipping</Text>
-                    <Text>${shippingRefundValue.toFixed(2)}</Text>
-                  </Box>
-                  <Box display="flex" justifyContent="space-between" paddingBlockStart="300">
-                    <Text fontWeight="bold">Refund total</Text>
-                    <Text fontWeight="bold">${refundTotal.toFixed(2)}</Text>
-                  </Box>
-                  <Box paddingBlockStart="200">
-                    <Button fullWidth variant="secondary" onClick={handleCalculateRefund} disabled={selectedProducts.length === 0}>
-                      Calculate Refund
-                    </Button>
-                  </Box>
-                  <Box paddingBlockStart="300">
-                    <Button fullWidth variant="primary" onClick={handleRefund} disabled={!refundMeta || selectedProducts.length === 0}>
-                      {refundMeta
-                        ? `Refund $${refundMeta.amount} (TX: ${refundMeta.transaction_id})`
-                        : `Refund $${refundTotal.toFixed(2)}`}
-                    </Button>
-                  </Box>
-                </Card>
-              </Grid.Cell>
-            </Grid>
-          </>
-        ) : (
-          <Layout.Section>
-            <Card>
-              <Box paddingBlockEnd="300">
-                <TextField
-                  label="Search orders by number or email"
-                  value={filter}
-                  onChange={(val) => {
-                    setFilter(val);
-                    setSearchParams({ search: val, page: 1 });
-                  }}
-                  autoComplete="off"
-                  placeholder="Search #5521, email etc"
-                />
+          {/* Summary */}
+          <Box display="flex" justifyContent="flex-end" marginTop="600">
+            <Card padding="400" style={{ width: 380 }}>
+              <Text variant="headingMd" fontWeight="bold" marginBottom="300">Summary</Text>
+              <Text color="subdued" marginBottom="300">No items selected.</Text>
+
+              <Box display="flex" justifyContent="space-between" marginBottom="200">
+                <Text>Refund amount</Text>
+                <Text>Unknown gateway</Text>
               </Box>
-             <IndexTable
-  resourceName={{ singular: "order", plural: "orders" }}
-  itemCount={orders.length}
-  selectedItemsCount={0}
-  headings={[
-    { title: "Order" },
-    { title: "Order ID" },
-    { title: "Customer" }, //  Added
-    { title: "Email" },
-    { title: "Date" },
-    { title: "Total" },
-    { title: "Payment Status" }
-  ]}
->
-  {orders.map((order, index) => (
-    <IndexTable.Row id={order.id} key={order.id} position={index}>
-      <IndexTable.Cell>
-        <Button variant="plain" onClick={() => showOrder(order.id)}>
-          {order.name}
-        </Button>
-      </IndexTable.Cell>
-      <IndexTable.Cell>{order.orderId}</IndexTable.Cell>
-      <IndexTable.Cell>{order.customerName || "N/A"}</IndexTable.Cell>
-      <IndexTable.Cell>{order.customerEmail}</IndexTable.Cell>
-      <IndexTable.Cell>{formatDate(order.createdAt)}</IndexTable.Cell>
-      <IndexTable.Cell>
-        {order.totalPriceSet.shopMoney.amount} {order.totalPriceSet.shopMoney.currencyCode}
-      </IndexTable.Cell>
-      <IndexTable.Cell>{order.displayFinancialStatus || "Unknown"}</IndexTable.Cell>
-    </IndexTable.Row>
-  ))}
-</IndexTable>
 
+              <input
+                type="text"
+                value={`$${refundTotal.toFixed(2)}`}
+                readOnly
+                style={{
+                  width: "100%",
+                  height: 40,
+                  border: "1px solid #ccc",
+                  borderRadius: 8,
+                  paddingLeft: 10,
+                  fontSize: "14px",
+                  marginBottom: "8px"
+                }}
+              />
+              <Text color="subdued" marginBottom="300">${availableToRefund} available for refund</Text>
 
-              <Box padding="300" display="flex" justifyContent="end">
-                <Pagination
-                  hasPrevious={page > 1}
-                  hasNext={page < totalPages}
-                  onPrevious={() => updatePage(page - 1)}
-                  onNext={() => updatePage(page + 1)}
-                />
+              <Box display="flex" alignItems="center" marginBottom="300">
+                <input type="checkbox" defaultChecked style={{ marginRight: 8 }} />
+                <Text>Send <a href="#" style={{ color: "#1a73e8" }}>notification</a> once refund is finalized</Text>
               </Box>
+
+              <Button fullWidth disabled variant="primary">
+                Refund ${refundTotal.toFixed(2)}
+              </Button>
             </Card>
-          </Layout.Section>
-        )}
-      </div>
-    </Page>
-  );
+          </Box>
+        </>
+      ) : (
+        <Card sectioned>
+          <Text>Loading...</Text>
+        </Card>
+      )}
+    </div>
+  </Page>
+);
 }
