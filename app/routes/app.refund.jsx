@@ -312,12 +312,30 @@ useEffect(() => {
     setSearchParams(params);
   };
 
-  const productSubtotal = selectedProducts.reduce(
-    (sum, item) => sum + (parseFloat(item.price) * item.quantity), 0
-  );
-  const taxAmount = parseFloat(selectedOrder?.totalTaxSet?.shopMoney?.amount || 0);
-  const shippingRefundValue = shippingRefundSelected ? parseFloat(shippingRefundAmount || 0) : 0;
-  const refundTotal = productSubtotal + taxAmount + shippingRefundValue;
+
+
+const productSubtotal = selectedProducts.reduce(
+  (sum, item) => sum + (parseFloat(item.price) * item.quantity), 0
+);
+
+const fullSubtotal = selectedOrder.lineItems.reduce(
+  (sum, item) =>
+    sum + parseFloat(item.discountedUnitPriceSet?.shopMoney?.amount || 0) * item.quantity,
+  0
+);
+
+const fullOrderTax = parseFloat(selectedOrder?.totalTaxSet?.shopMoney?.amount || 0);
+
+const taxAmount = productSubtotal > 0 && fullSubtotal > 0
+  ? (fullOrderTax * (productSubtotal / fullSubtotal))
+  : 0;
+
+const shippingRefundValue = shippingRefundSelected ? parseFloat(shippingRefundAmount || 0) : 0;
+
+const refundTotal = productSubtotal + taxAmount + shippingRefundValue;
+
+
+
 
   const preparePayload = () => ({
     mode: refundMeta ? "refund" : "calculate",
@@ -672,7 +690,7 @@ function formatDate(dateStr) {
   headings={[
     { title: "Order" },
     { title: "Order ID" },
-    { title: "Customer" }, // ✅ Added
+    { title: "Customer" }, //  Added
     { title: "Email" },
     { title: "Date" },
     { title: "Total" },
