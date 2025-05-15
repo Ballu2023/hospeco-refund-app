@@ -261,6 +261,29 @@ export default function RefundPage() {
     fetchRefundHistory();
   }, [selectedOrder]);
 
+
+  // 🆕 Add this useEffect to compute remaining shipping dynamically
+useEffect(() => {
+  if (!selectedOrder || !refundHistory) return;
+
+  let totalShippingRefunded = 0;
+
+  refundHistory.forEach(refund => {
+    refund.refund_shipping_lines?.forEach(ship => {
+      const refundedAmount = parseFloat(ship.subtotal_amount_set?.shop_money?.amount || 0);
+      totalShippingRefunded += refundedAmount;
+    });
+  });
+
+  const originalShipping = parseFloat(
+    selectedOrder?.shippingLines?.edges?.[0]?.node?.originalPriceSet?.shopMoney?.amount || "0"
+  );
+
+  const remainingShipping = Math.max(originalShipping - totalShippingRefunded, 0).toFixed(2);
+  setShippingRefundAmount(remainingShipping);
+}, [refundHistory, selectedOrder]);
+
+
   const updatePage = (newPage) => {
     const params = new URLSearchParams(searchParams);
     params.set("page", newPage);
@@ -447,23 +470,28 @@ export default function RefundPage() {
                   })}
                 </Card>
 
-                <Card title="Refund Shipping" sectioned>
-                  <Box display="flex" alignItems="center" gap="300">
-                    <input
-                      type="checkbox"
-                      checked={shippingRefundSelected}
-                      onChange={e => setShippingRefundSelected(e.target.checked)}
-                    />
-                    <Text>Freight - ${shippingRefundAmount}</Text>
-                    <input
-                      type="text"
-                      disabled={!shippingRefundSelected}
-                      value={shippingRefundAmount}
-                      onChange={e => setShippingRefundAmount(e.target.value)}
-                      style={{ marginLeft: "auto", width: 100, padding: 5 }}
-                    />
-                  </Box>
-                </Card>
+              <Card title="Refund Shipping" sectioned>
+  {parseFloat(shippingRefundAmount) > 0 ? (
+    <Box display="flex" alignItems="center" gap="300">
+      <input
+        type="checkbox"
+        checked={shippingRefundSelected}
+        onChange={e => setShippingRefundSelected(e.target.checked)}
+      />
+      <Text>Freight - Max Refundable: ${shippingRefundAmount}</Text>
+      <input
+        type="text"
+        disabled={!shippingRefundSelected}
+        value={shippingRefundAmount}
+        onChange={e => setShippingRefundAmount(e.target.value)}
+        style={{ marginLeft: "auto", width: 100, padding: 5 }}
+      />
+    </Box>
+  ) : (
+    <Text color="subdued">Shipping has already been fully refunded.</Text>
+  )}
+</Card>
+
 
                 <Card title="Reason for Refund" sectioned>
                   <TextField
