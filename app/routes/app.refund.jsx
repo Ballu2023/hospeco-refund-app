@@ -1,19 +1,13 @@
-import {
-  Page, Layout, Card, Text, Box, Button, TextField,
-  IndexTable, Pagination, Thumbnail, Grid, Spinner
-} from "@shopify/polaris";
-import { useLoaderData, useSearchParams, useFetcher } from "@remix-run/react";
-import { useState, useEffect } from "react";
+// ✅ PART 1 — Loader and Action Logic
 import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 
-// ✅ Loader Function
 export const loader = async ({ request }) => {
   const { admin } = await authenticate.admin(request);
   const url = new URL(request.url);
   const search = url.searchParams.get("search")?.toLowerCase().trim() || "";
-  const page = parseInt(url.searchParams.get("page") || "1");
-  const selectedOrderId = url.searchParams.get("orderId");
+  const page = parseInt(url.searchParams.get("page")) || 1;
+  const selectedOrderId = url.searchParams.get("orderId") || null;
 
   const PAGE_SIZE = 25;
   let hasNextPage = true;
@@ -21,7 +15,7 @@ export const loader = async ({ request }) => {
   const allOrders = [];
 
   while (hasNextPage && allOrders.length < 1000) {
-    const response = await admin.graphql(`
+    const query = `
       query GetOrders($first: Int!, $after: String) {
         orders(first: $first, after: $after, reverse: true) {
           pageInfo { hasNextPage }
@@ -59,8 +53,8 @@ export const loader = async ({ request }) => {
           }
         }
       }
-    `, { variables: { first: 250, after: afterCursor } });
-
+    `;
+    const response = await admin.graphql(query, { variables: { first: 250, after: afterCursor } });
     const data = await response.json();
     const orders = data.data.orders.edges;
 
@@ -70,9 +64,7 @@ export const loader = async ({ request }) => {
         let transactionId = null, gateway = "manual", locationId = 70116966605;
 
         try {
-          const txResp = await admin.rest.get({
-            path: `/admin/api/2023-10/orders/${orderIdNum}/transactions.json`
-          });
+          const txResp = await admin.rest.get({ path: `/admin/api/2023-10/orders/${orderIdNum}/transactions.json` });
           const tx = txResp?.body?.transactions?.[0];
           if (tx) {
             transactionId = tx.id;
@@ -84,34 +76,19 @@ export const loader = async ({ request }) => {
         }
 
         const metafields = {};
-        node.metafields.edges.forEach(({ node: meta }) => {
-          metafields[meta.key] = meta.value;
+        node.metafields.edges.forEach(({ node }) => {
+          metafields[node.key] = node.value;
         });
-
-        // Only fetch refund history if this is the selected order
-        let refundHistory = [];
-        if (selectedOrderId === node.id) {
-          try {
-            const refundRes = await fetch(
-              `https://phpstack-1419716-5486887.cloudwaysapps.com/refunds/${orderIdNum}`
-            );
-            const refundData = await refundRes.json();
-            refundHistory = refundData.refunds || [];
-          } catch (err) {
-            console.warn("Failed to load refund history:", err);
-          }
-        }
 
         allOrders.push({
           ...node,
           cursor,
-          lineItems: node.lineItems.edges.map(({ node: item }) => item),
+          lineItems: node.lineItems.edges.map(({ node }) => node),
           orderId: orderIdNum,
           transactionId,
           gateway,
           locationId,
-          metafields,
-          refundHistory
+          metafields
         });
       }
     }
@@ -128,23 +105,12 @@ export const loader = async ({ request }) => {
     );
   });
 
-  const paginatedOrders = filteredOrders.slice(
-    (page - 1) * PAGE_SIZE,
-    page * PAGE_SIZE
-  );
-  const selectedOrder = selectedOrderId 
-    ? allOrders.find(o => o.id === selectedOrderId) 
-    : null;
+  const paginatedOrders = filteredOrders.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const selectedOrder = selectedOrderId ? allOrders.find(o => o.id === selectedOrderId) : null;
 
-  return json({ 
-    orders: paginatedOrders, 
-    total: filteredOrders.length, 
-    page, 
-    selectedOrder 
-  });
+  return json({ orders: paginatedOrders, total: filteredOrders.length, page, selectedOrder });
 };
 
-// ✅ Action Function
 export const action = async ({ request }) => {
   try {
     const formData = await request.formData();
@@ -182,111 +148,88 @@ export const action = async ({ request }) => {
       body: JSON.stringify({ orderId, payload }),
     });
 
-    if (!res.ok) {
-      const error = await res.json();
-      throw new Error(error.message || "Refund failed");
-    }
-
     const result = await res.json();
+    if (!res.ok) throw new Error(result.error || "Failed");
     return json(result);
   } catch (err) {
-    console.error("Refund Error:", err);
-    return json({ 
-      error: err.message || "Refund processing failed" 
-    }, { status: 500 });
+    console.error("❌ Refund Error:", err);
+    return json({ error: "Refund failed." }, { status: 500 });
   }
 };
 
-// ✅ Main Component
+
+
+
+
+
+// ✅ app/routes/app.refund.jsx — Full Remix UI Code (Polaris + Refund Logic)
+
+import {
+  Page, Layout, Card, Text, Box, Button, TextField,
+  IndexTable, Pagination, Thumbnail, Grid
+} from "@shopify/polaris";
+import { useLoaderData, useSearchParams, useFetcher } from "@remix-run/react";
+import { useState, useEffect } from "react";
+
 export default function RefundPage() {
-  const { orders, total, page, selectedOrder: initialSelectedOrder } = useLoaderData();
+  const { orders, total, page, selectedOrder } = useLoaderData();
   const [searchParams, setSearchParams] = useSearchParams();
   const [selectedProducts, setSelectedProducts] = useState([]);
   const [shippingRefundSelected, setShippingRefundSelected] = useState(false);
   const [shippingRefundAmount, setShippingRefundAmount] = useState("0.00");
-  const [reason, setReason] = useState("");
+  const [reasonForRefund, setReasonForRefund] = useState("");
   const [emailCustomer, setEmailCustomer] = useState(true);
   const [refundMeta, setRefundMeta] = useState(null);
   const [filter, setFilter] = useState("");
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [selectedOrder, setSelectedOrder] = useState(initialSelectedOrder);
-  const [refundHistory, setRefundHistory] = useState(initialSelectedOrder?.refundHistory || []);
+  const [refundHistory, setRefundHistory] = useState(null);
+  const [loadingHistory, setLoadingHistory] = useState(false);
   const fetcher = useFetcher();
-
   const totalPages = Math.ceil(total / 25);
 
-  // Filter out fully refunded items
-  const getAvailableItems = () => {
-    if (!selectedOrder?.lineItems) return [];
-    
-    const refundedQuantities = {};
-    refundHistory.forEach(refund => {
-      refund.refund_line_items?.forEach(item => {
-        const lineId = item.line_item?.id;
-        if (lineId) {
-          refundedQuantities[lineId] = (refundedQuantities[lineId] || 0) + (item.quantity || 0);
-        }
-      });
-    });
-
-    return selectedOrder.lineItems
-      .map(item => {
-        const refundedQty = refundedQuantities[item.id] || 0;
-        const remainingQty = Math.max(0, item.quantity - refundedQty);
-        return remainingQty > 0 ? { ...item, quantity: remainingQty } : null;
-      })
-      .filter(Boolean);
-  };
-
-  const availableItems = getAvailableItems();
-
-  // Handle refresh
-  const handleRefresh = async () => {
-    if (!selectedOrder) return;
-    
-    setIsRefreshing(true);
-    try {
-      const orderIdNum = selectedOrder.id.split("/").pop();
-      const response = await fetch(
-        `https://phpstack-1419716-5486887.cloudwaysapps.com/refunds/${orderIdNum}`
-      );
-      const data = await response.json();
-      
-      setRefundHistory(data.refunds || []);
-      
-      // Update selected products to remove any that are now fully refunded
-      setSelectedProducts(prev => 
-        prev.filter(p => 
-          availableItems.some(item => item.id === p.id)
-        )
-      );
-    } catch (err) {
-      console.error("Refresh failed:", err);
-    } finally {
-      setIsRefreshing(false);
-    }
-  };
-
-  // Initialize when order is selected
   useEffect(() => {
-    if (initialSelectedOrder) {
-      setSelectedOrder(initialSelectedOrder);
-      setRefundHistory(initialSelectedOrder.refundHistory || []);
+    if (selectedOrder) {
       setSelectedProducts([]);
       setShippingRefundSelected(false);
       setShippingRefundAmount(
-        initialSelectedOrder.shippingLines?.edges?.[0]?.node?.originalPriceSet?.shopMoney?.amount || "0.00"
+        selectedOrder?.shippingLines?.edges?.[0]?.node?.originalPriceSet?.shopMoney?.amount || "0.00"
       );
-      setReason("");
+      setReasonForRefund("");
       setEmailCustomer(true);
       setRefundMeta(null);
     }
-  }, [initialSelectedOrder]);
+  }, [selectedOrder]);
 
-  // Navigation functions
+  useEffect(() => {
+    if (fetcher.data?.transactionId && fetcher.data?.amount) {
+      setRefundMeta({
+        transaction_id: fetcher.data.transactionId,
+        amount: fetcher.data.amount
+      });
+    }
+  }, [fetcher.data]);
+
+  useEffect(() => {
+    const fetchRefundHistory = async () => {
+      if (!selectedOrder) return;
+      setLoadingHistory(true);
+      try {
+        const orderIdNum = selectedOrder.id.split("/").pop();
+        const res = await fetch(`https://phpstack-1419716-5486887.cloudwaysapps.com/refunds/${orderIdNum}`);
+        const data = await res.json();
+        setRefundHistory(data.refunds || []);
+      } catch (err) {
+        console.error("❌ Error fetching refund history:", err);
+        setRefundHistory([]);
+      } finally {
+        setLoadingHistory(false);
+      }
+    };
+    fetchRefundHistory();
+  }, [selectedOrder]);
+
   const updatePage = (newPage) => {
     const params = new URLSearchParams(searchParams);
-    params.set("page", newPage.toString());
+    params.set("page", newPage);
     setSearchParams(params);
   };
 
@@ -302,265 +245,291 @@ export default function RefundPage() {
     setSearchParams(params);
   };
 
-  // Calculate refund amounts
   const productSubtotal = selectedProducts.reduce(
-    (sum, item) => sum + (parseFloat(item.discountedUnitPriceSet?.shopMoney?.amount || 0) * item.quantity),
-    0
+    (sum, item) => sum + (parseFloat(item.price) * item.quantity), 0
   );
-
   const taxAmount = parseFloat(selectedOrder?.totalTaxSet?.shopMoney?.amount || 0);
-  const shippingAmount = shippingRefundSelected ? parseFloat(shippingRefundAmount || 0) : 0;
-  const refundTotal = productSubtotal + taxAmount + shippingAmount;
+  const shippingRefundValue = shippingRefundSelected ? parseFloat(shippingRefundAmount || 0) : 0;
+  const refundTotal = productSubtotal + taxAmount + shippingRefundValue;
 
-  // Prepare payload for API calls
-  const preparePayload = (mode) => ({
-    mode,
+  const preparePayload = () => ({
+    mode: refundMeta ? "refund" : "calculate",
     variables: {
       input: {
-        orderId: selectedOrder?.id,
+        orderId: selectedOrder.id,
         refundLineItems: selectedProducts.map(item => ({
           lineItemId: item.id,
           quantity: item.quantity,
-          price: item.discountedUnitPriceSet?.shopMoney?.amount,
+          price: item.price,
           title: item.title
         })),
-        shipping: shippingRefundSelected ? { 
-          amount: shippingAmount 
-        } : undefined,
+        shipping: shippingRefundSelected ? { amount: shippingRefundAmount } : undefined,
         notifyCustomer: emailCustomer,
-        note: reason || "Refund processed via app",
-        totalAmount: refundMeta?.amount || refundTotal.toFixed(2),
-        transactionId: refundMeta?.transaction_id || selectedOrder?.transactionId,
-        gateway: selectedOrder?.gateway || "manual",
-        locationId: selectedOrder?.locationId || "70116966605"
+        note: reasonForRefund || "Refund processed via app",
+        totalAmount: refundMeta?.amount || refundTotal,
+        transactionId: refundMeta?.transaction_id || selectedOrder.transactionId,
+        gateway: selectedOrder.gateway,
+        locationId: selectedOrder.locationId || "70116966605"
       }
     }
   });
 
-  // Handle calculate refund
-  const handleCalculate = () => {
+  const handleCalculateRefund = () => {
     const formData = new FormData();
-    formData.append("body", JSON.stringify(preparePayload("calculate")));
+    formData.append("body", JSON.stringify({ ...preparePayload(), mode: "calculate" }));
     fetcher.submit(formData, { method: "POST" });
   };
 
-  // Handle full refund
   const handleRefund = async () => {
-    if (!selectedOrder || selectedProducts.length === 0) return;
-    
-    const confirmation = window.confirm(
-      `Process refund for $${refundTotal.toFixed(2)}?\n\n` +
-      `Items: ${selectedProducts.length}\n` +
-      `Shipping: $${shippingAmount.toFixed(2)}\n` +
-      `Tax: $${taxAmount.toFixed(2)}`
-    );
-    
-    if (!confirmation) return;
+    if (selectedProducts.length === 0 || !refundMeta) return;
+    const { metafields } = selectedOrder;
+    const summary = `\n🧾 Refund Summary:\n\n` +
+      selectedProducts.map(p => `• ${p.title} (Qty: ${p.quantity} × $${p.price})`).join("\n") +
+      (shippingRefundSelected ? `\n• Shipping: $${parseFloat(shippingRefundAmount).toFixed(2)}` : "") +
+      `\n• Tax: $${taxAmount.toFixed(2)}` +
+      `\n• Total Refund: $${refundMeta.amount}` +
+      `\n\n📌 Payment Info:\n` +
+      `• Mode: ${metafields?.payment_mode || "N/A"}\n` +
+      `• Txn ID: ${metafields?.transaction_id_number || "N/A"}` +
+      `\n\nClick OK to continue with the refund.`;
+    if (!window.confirm(summary)) return;
 
-    const formData = new FormData();
-    formData.append("body", JSON.stringify(preparePayload("refund")));
-    fetcher.submit(formData, { method: "POST" });
-  };
+    const paymentMode = metafields?.payment_mode?.toLowerCase();
+    const transactionId = metafields?.transaction_id_number;
+    const amount = refundMeta.amount;
 
-  // Handle refund result
-  useEffect(() => {
-    if (fetcher.data) {
-      if (fetcher.data.error) {
-        alert(`Error: ${fetcher.data.error}`);
-      } else if (fetcher.data.transactionId) {
-        setRefundMeta({
-          transaction_id: fetcher.data.transactionId,
-          amount: fetcher.data.amount
+       if (paymentMode === 'paypal') {
+      try {
+        const res = await fetch("https://phpstack-1419716-5486887.cloudwaysapps.com/paypal-refund", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ transactionId, amount }),
         });
-        handleRefresh(); // Refresh after successful refund
+
+        const data = await res.json();
+        if (!data.success) {
+          alert("❌ PayPal refund failed: " + data.message);
+          return;
+        }
+
+        const payload = preparePayload();
+        payload.variables.input.note = `Refunded via PayPal: ${data.paypalRefundId}`;
+        const formData = new FormData();
+        formData.append("body", JSON.stringify({ ...payload, mode: "refund" }));
+        fetcher.submit(formData, { method: "POST" });
+
+      } catch (err) {
+        alert("❌ PayPal refund error: " + err.message);
+        return;
       }
+    } else if (paymentMode === 'stripe') {
+      try {
+        const res = await fetch("https://phpstack-1419716-5486887.cloudwaysapps.com/stripe-refund", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ chargeId: transactionId, amount })
+        });
+
+        const data = await res.json();
+        if (!data.success) {
+          alert("❌ Stripe refund failed: " + data.message);
+          return;
+        }
+
+        const payload = preparePayload();
+        payload.variables.input.note = `Refunded via Stripe: ${data.stripeRefundId}`;
+        const formData = new FormData();
+        formData.append("body", JSON.stringify({ ...payload, mode: "refund" }));
+        fetcher.submit(formData, { method: "POST" });
+
+      } catch (err) {
+        alert("❌ Stripe refund error: " + err.message);
+        return;
+      }
+    } else {
+      const formData = new FormData();
+      formData.append("body", JSON.stringify({ ...preparePayload(), mode: "refund" }));
+      fetcher.submit(formData, { method: "POST" });
     }
-  }, [fetcher.data]);
+
+    setTimeout(() => {
+      alert(`\n✅ Refund Successful!\n\nAmount: $${amount}\nTxn: ${refundMeta.transaction_id}`);
+      goBack();
+    }, 800);
+  };
 
   return (
     <Page fullWidth>
-      <div style={{ padding: "20px" }}>
+      <div style={{ padding: 20 }}>
         {selectedOrder ? (
           <>
-            <Box paddingBottom="400">
-              <Button onClick={goBack}>&larr; Back to orders</Button>
-              <Button 
-                onClick={handleRefresh}
-                loading={isRefreshing}
-                disabled={isRefreshing}
-                style={{ marginLeft: "10px" }}
-              >
-                Refresh
-              </Button>
-            </Box>
-
+            <Button onClick={goBack}>&larr; Back to Order List</Button>
             <Grid>
               <Grid.Cell columnSpan={{ xs: 6, sm: 8 }}>
-                {/* Order Items */}
                 <Card>
-                  <Text variant="headingMd" as="h2">
-                    Available Items for Refund
-                  </Text>
-                  {availableItems.length === 0 ? (
-                    <Box padding="400">
-                      <Text color="subdued">No items available for refund</Text>
-                    </Box>
-                  ) : (
-                    availableItems.map(item => {
-                      const selected = selectedProducts.find(p => p.id === item.id);
-                      const selectedQty = selected?.quantity || 0;
-                      
-                      return (
-                        <Box key={item.id} padding="300" display="flex" alignItems="center">
-                          <Thumbnail
-                            source={item.image?.originalSrc || ""}
-                            alt={item.image?.altText || ""}
-                            size="small"
-                          />
-                          <Box paddingLeft="300" flexGrow={1}>
-                            <Text fontWeight="bold">{item.title}</Text>
-                            <Text variant="bodySm">{item.sku}</Text>
-                            <Text variant="bodySm">
-                              ${item.discountedUnitPriceSet?.shopMoney?.amount} × {item.quantity}
-                            </Text>
-                          </Box>
-                          <input
-                            type="number"
-                            min="0"
-                            max={item.quantity}
-                            value={selectedQty}
-                            onChange={(e) => {
-                              const qty = parseInt(e.target.value) || 0;
-                              setSelectedProducts(prev => {
-                                const others = prev.filter(p => p.id !== item.id);
-                                return qty > 0 
-                                  ? [...others, { 
-                                      ...item, 
-                                      quantity: Math.min(qty, item.quantity) 
-                                    }]
-                                  : others;
-                              });
-                            }}
-                            style={{ width: "60px", padding: "5px" }}
-                          />
+                  <Text variant="headingMd">Order Line Items</Text>
+                  {selectedOrder.lineItems.map(item => {
+                    const existing = selectedProducts.find(p => p.id === item.id);
+                    const selectedQuantity = existing?.quantity || 0;
+                    return (
+                      <Box key={item.id} display="flex" alignItems="center" paddingBlock="300">
+                        <Thumbnail
+                          source={item.image?.originalSrc || "https://cdn.shopify.com/s/files/1/0752/6435/6351/files/no-image-icon.png"}
+                          alt={item.image?.altText || "Product image"}
+                          size="small"
+                        />
+                        <Box paddingInlineStart="300" flexGrow={1}>
+                          <Text fontWeight="bold">{item.title}</Text>
+                          <Text variant="bodySm">{item.sku}</Text>
+                          <Text variant="bodySm">
+                            ${item.discountedUnitPriceSet.shopMoney.amount} × {item.quantity}
+                          </Text>
                         </Box>
-                      );
-                    })
-                  )}
+                        <input
+                          type="number"
+                          min="0"
+                          max={item.quantity}
+                          value={selectedQuantity}
+                          onChange={(e) => {
+                            const qty = parseInt(e.target.value) || 0;
+                            setSelectedProducts(prev => {
+                              const withoutThis = prev.filter(p => p.id !== item.id);
+                              if (qty > 0) {
+                                return [...withoutThis, {
+                                  id: item.id,
+                                  title: item.title,
+                                  quantity: qty,
+                                  price: item.discountedUnitPriceSet.shopMoney.amount
+                                }];
+                              } else {
+                                return withoutThis;
+                              }
+                            });
+                          }}
+                          style={{ width: "50px", marginLeft: "10px" }}
+                        />
+                      </Box>
+                    );
+                  })}
                 </Card>
 
-                {/* Shipping Refund */}
-                <Card sectioned>
-                  <Box display="flex" alignItems="center" gap="200">
+                <Card title="Refund Shipping" sectioned>
+                  <Box display="flex" alignItems="center" gap="300">
                     <input
                       type="checkbox"
                       checked={shippingRefundSelected}
-                      onChange={(e) => setShippingRefundSelected(e.target.checked)}
+                      onChange={e => setShippingRefundSelected(e.target.checked)}
                     />
-                    <Text>Refund shipping</Text>
-                    <TextField
-                      type="number"
+                    <Text>Freight - ${shippingRefundAmount}</Text>
+                    <input
+                      type="text"
                       disabled={!shippingRefundSelected}
                       value={shippingRefundAmount}
-                      onChange={setShippingRefundAmount}
-                      prefix="$"
-                      style={{ width: "100px", marginLeft: "auto" }}
+                      onChange={e => setShippingRefundAmount(e.target.value)}
+                      style={{ marginLeft: "auto", width: 100, padding: 5 }}
                     />
                   </Box>
                 </Card>
 
-                {/* Refund Reason */}
-                <Card sectioned>
+                <Card title="Reason for Refund" sectioned>
                   <TextField
-                    label="Reason for refund"
-                    value={reason}
-                    onChange={setReason}
+                    value={reasonForRefund}
+                    onChange={setReasonForRefund}
                     multiline={2}
-                    placeholder="Internal note (customer won't see this)"
+                    placeholder="Only you and staff can see this reason"
                   />
                 </Card>
 
-                {/* Refund History */}
-                <Card sectioned>
-                  <Text variant="headingMd" as="h2">
-                    Previous Refunds
-                  </Text>
-                  {refundHistory.length === 0 ? (
-                    <Box padding="300">
-                      <Text color="subdued">No refund history found</Text>
+                {/* ✅ Refund History Section */}
+                <Card title="Refunded Items" sectioned>
+                  {loadingHistory ? (
+                    <Box paddingBlockStart="200">
+                      <Text>Loading refund history...</Text>
                     </Box>
-                  ) : (
-                    refundHistory.map((refund, i) => (
-                      <Box key={i} padding="300" borderTop="divider">
-                        <Text fontWeight="bold">
-                          {new Date(refund.created_at).toLocaleString()} - ${refund.transactions?.[0]?.amount || "0.00"}
-                        </Text>
-                        {refund.note && <Text>{refund.note}</Text>}
-                        {refund.refund_line_items?.map((item, j) => (
-                          <Box key={j} paddingLeft="200" paddingTop="100">
+                  ) : refundHistory && refundHistory.length > 0 ? (
+                    refundHistory.map((refund, refundIndex) => (
+                      <div key={refundIndex}>
+                        <Box paddingBlock="100">
+                          <Text fontWeight="bold">Refund Date:</Text>
+                          <Text>{new Date(refund.created_at).toLocaleString()}</Text>
+                          {refund.note && (
+                            <Box paddingBlockStart="100">
+                              <Text fontWeight="bold">Note:</Text>
+                              <Text>{refund.note}</Text>
+                            </Box>
+                          )}
+                          {refund.transactions?.[0]?.id && (
+                            <Box paddingBlockStart="100">
+                              <Text fontWeight="bold">Transaction ID:</Text>
+                              <Text>{refund.transactions[0].id}</Text>
+                              <Text>Gateway: {refund.transactions[0].gateway}</Text>
+                            </Box>
+                          )}
+                        </Box>
+                        {refund.refund_line_items.map((item, itemIndex) => {
+                          const line = item.line_item;
+                          const imageUrl = `https://cdn.shopify.com/s/files/1/0752/6435/6351/files/no-image-icon.png`;
+                          return (
+                            <Box key={itemIndex} paddingBlock="200" borderBottom display="flex" gap="300">
+                              <img src={imageUrl} alt={line?.title} width={60} height={60} style={{ borderRadius: 4, objectFit: 'cover' }} />
+                              <Box>
+                                <Text fontWeight="bold">{line?.title || "Untitled Product"}</Text>
+                                <Text>SKU: {line?.sku || "N/A"}</Text>
+                                <Text>Quantity Refunded: {item.quantity}</Text>
+                                <Text>Amount Refunded: ${parseFloat(item.subtotal || 0).toFixed(2)}</Text>
+                                <Text>Tax: ${parseFloat(item.total_tax || 0).toFixed(2)}</Text>
+                              </Box>
+                            </Box>
+                          );
+                        })}
+                        {refund.refund_shipping_lines?.length > 0 && (
+                          <Box paddingBlock="200" borderBottom>
+                            <Text fontWeight="bold">Shipping Refunded</Text>
                             <Text>
-                              {item.quantity} × {item.line_item?.title} (${item.subtotal})
+                              Amount: ${refund.refund_shipping_lines[0].subtotal_amount_set.shop_money.amount}
+                            </Text>
+                            <Text>
+                              Tax: ${refund.order_adjustments?.[0]?.tax_amount_set?.shop_money?.amount || "0.00"}
                             </Text>
                           </Box>
-                        ))}
-                      </Box>
+                        )}
+                      </div>
                     ))
+                  ) : (
+                    <Text color="subdued">No refund history available.</Text>
                   )}
                 </Card>
               </Grid.Cell>
 
               <Grid.Cell columnSpan={{ xs: 6, sm: 4 }}>
-                <Card sectioned>
-                  <Text variant="headingMd" as="h2">
-                    Refund Summary
-                  </Text>
-                  <Box padding="300">
-                    <Box display="flex" justifyContent="space-between">
-                      <Text>Items subtotal:</Text>
-                      <Text>${productSubtotal.toFixed(2)}</Text>
-                    </Box>
-                    <Box display="flex" justifyContent="space-between">
-                      <Text>Tax:</Text>
-                      <Text>${taxAmount.toFixed(2)}</Text>
-                    </Box>
-                    <Box display="flex" justifyContent="space-between">
-                      <Text>Shipping:</Text>
-                      <Text>${shippingAmount.toFixed(2)}</Text>
-                    </Box>
-                    <Box 
-                      display="flex" 
-                      justifyContent="space-between"
-                      paddingTop="200"
-                      borderTop="divider"
-                    >
-                      <Text fontWeight="bold">Total:</Text>
-                      <Text fontWeight="bold">${refundTotal.toFixed(2)}</Text>
-                    </Box>
-
-                    <Box paddingTop="400">
-                      <Button
-                        fullWidth
-                        onClick={handleCalculate}
-                        disabled={selectedProducts.length === 0}
-                        loading={fetcher.state === "submitting"}
-                      >
-                        Calculate Refund
-                      </Button>
-                    </Box>
-
-                    <Box paddingTop="200">
-                      <Button
-                        fullWidth
-                        primary
-                        onClick={handleRefund}
-                        disabled={!refundMeta || selectedProducts.length === 0}
-                        loading={fetcher.state === "submitting"}
-                      >
-                        {refundMeta 
-                          ? `Refund $${refundMeta.amount}` 
-                          : "Process Refund"}
-                      </Button>
-                    </Box>
+                <Card title="Summary" sectioned>
+                  <Box display="flex" justifyContent="space-between">
+                    <Text>Item subtotal</Text>
+                    <Text>${productSubtotal.toFixed(2)}</Text>
+                  </Box>
+                  <Box display="flex" justifyContent="space-between" paddingBlockStart="100">
+                    <Text>Tax</Text>
+                    <Text>${taxAmount.toFixed(2)}</Text>
+                  </Box>
+                  <Box display="flex" justifyContent="space-between" paddingBlockStart="100">
+                    <Text>Shipping</Text>
+                    <Text>${shippingRefundValue.toFixed(2)}</Text>
+                  </Box>
+                  <Box display="flex" justifyContent="space-between" paddingBlockStart="300">
+                    <Text fontWeight="bold">Refund total</Text>
+                    <Text fontWeight="bold">${refundTotal.toFixed(2)}</Text>
+                  </Box>
+                  <Box paddingBlockStart="200">
+                    <Button fullWidth variant="secondary" onClick={handleCalculateRefund} disabled={selectedProducts.length === 0}>
+                      Calculate Refund
+                    </Button>
+                  </Box>
+                  <Box paddingBlockStart="300">
+                    <Button fullWidth variant="primary" onClick={handleRefund} disabled={!refundMeta || selectedProducts.length === 0}>
+                      {refundMeta
+                        ? `Refund $${refundMeta.amount} (TX: ${refundMeta.transaction_id})`
+                        : `Refund $${refundTotal.toFixed(2)}`}
+                    </Button>
                   </Box>
                 </Card>
               </Grid.Cell>
@@ -569,65 +538,55 @@ export default function RefundPage() {
         ) : (
           <Layout.Section>
             <Card>
-              <Box paddingBottom="300">
+              <Box paddingBlockEnd="300">
                 <TextField
-                  label="Search orders"
+                  label="Search orders by number or email"
                   value={filter}
-                  onChange={(value) => {
-                    setFilter(value);
-                    const params = new URLSearchParams();
-                    params.set("search", value);
-                    params.set("page", "1");
-                    setSearchParams(params);
+                  onChange={(val) => {
+                    setFilter(val);
+                    setSearchParams({ search: val, page: 1 });
                   }}
-                  placeholder="Search by order # or email"
                   autoComplete="off"
+                  placeholder="Search #5521, email etc"
                 />
               </Box>
-
               <IndexTable
+                resourceName={{ singular: "order", plural: "orders" }}
                 itemCount={orders.length}
+                selectedItemsCount={0}
                 headings={[
-                  { title: "Order" },
+                  { title: "Order Name" },
+                  { title: "Order ID" },
+                  { title: "Email" },
                   { title: "Date" },
-                  { title: "Customer" },
                   { title: "Total" },
-                  { title: "Status" }
+                  { title: "Payment Status" }
                 ]}
               >
                 {orders.map((order, index) => (
-                  <IndexTable.Row key={order.id} position={index}>
+                  <IndexTable.Row id={order.id} key={order.id} position={index}>
                     <IndexTable.Cell>
-                      <Button plain onClick={() => showOrder(order.id)}>
+                      <Button variant="plain" onClick={() => showOrder(order.id)}>
                         {order.name}
                       </Button>
                     </IndexTable.Cell>
-                    <IndexTable.Cell>
-                      {new Date(order.createdAt).toLocaleDateString()}
-                    </IndexTable.Cell>
-                    <IndexTable.Cell>
-                      {order.email}
-                    </IndexTable.Cell>
-                    <IndexTable.Cell>
-                      ${order.totalPriceSet?.shopMoney?.amount}
-                    </IndexTable.Cell>
-                    <IndexTable.Cell>
-                      {order.displayFinancialStatus}
-                    </IndexTable.Cell>
+                    <IndexTable.Cell>{order.orderId}</IndexTable.Cell>
+                    <IndexTable.Cell>{order.email}</IndexTable.Cell>
+                    <IndexTable.Cell>{new Date(order.createdAt).toLocaleString()}</IndexTable.Cell>
+                    <IndexTable.Cell>{order.totalPriceSet.shopMoney.amount} {order.totalPriceSet.shopMoney.currencyCode}</IndexTable.Cell>
+                    <IndexTable.Cell>{order.displayFinancialStatus || "Unknown"}</IndexTable.Cell>
                   </IndexTable.Row>
                 ))}
               </IndexTable>
 
-              {totalPages > 1 && (
-                <Box paddingTop="300">
-                  <Pagination
-                    hasPrevious={page > 1}
-                    hasNext={page < totalPages}
-                    onPrevious={() => updatePage(page - 1)}
-                    onNext={() => updatePage(page + 1)}
-                  />
-                </Box>
-              )}
+              <Box padding="300" display="flex" justifyContent="end">
+                <Pagination
+                  hasPrevious={page > 1}
+                  hasNext={page < totalPages}
+                  onPrevious={() => updatePage(page - 1)}
+                  onNext={() => updatePage(page + 1)}
+                />
+              </Box>
             </Card>
           </Layout.Section>
         )}
