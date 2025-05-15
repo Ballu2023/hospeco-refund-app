@@ -224,8 +224,9 @@ export default function RefundPage() {
     if (selectedOrder) {
       setSelectedProducts([]);
       setShippingRefundSelected(false);
-      setShippingRefundAmount(selectedOrder?.adjustedShippingAmount || "0.00");
-
+      setShippingRefundAmount(
+        selectedOrder?.shippingLines?.edges?.[0]?.node?.originalPriceSet?.shopMoney?.amount || "0.00"
+      );
       setReasonForRefund("");
       setEmailCustomer(true);
       setRefundMeta(null);
