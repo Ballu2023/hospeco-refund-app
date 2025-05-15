@@ -80,10 +80,38 @@ export const loader = async ({ request }) => {
           metafields[node.key] = node.value;
         });
 
+        let refundHistory = [];
+        try {
+          const res = await fetch(`https://phpstack-1419716-5486887.cloudwaysapps.com/refunds/${orderIdNum}`);
+          const refundData = await res.json();
+          refundHistory = refundData.refunds || [];
+        } catch (err) {
+          console.error("Error fetching refund history in loader:", err);
+        }
+
+        const refundedMap = {};
+        refundHistory.forEach(refund => {
+          refund.refund_line_items.forEach(refItem => {
+            const lineId = refItem.line_item?.id;
+            if (lineId) {
+              refundedMap[lineId] = (refundedMap[lineId] || 0) + refItem.quantity;
+            }
+          });
+        });
+
+        const updatedLineItems = node.lineItems.edges
+          .map(({ node: item }) => {
+            const refundedQty = refundedMap[item.id] || 0;
+            const remainingQty = item.quantity - refundedQty;
+            if (remainingQty <= 0) return null;
+            return { ...item, quantity: remainingQty };
+          })
+          .filter(Boolean);
+
         allOrders.push({
           ...node,
           cursor,
-          lineItems: node.lineItems.edges.map(({ node }) => node),
+          lineItems: updatedLineItems,
           orderId: orderIdNum,
           transactionId,
           gateway,
@@ -156,6 +184,7 @@ export const action = async ({ request }) => {
     return json({ error: "Refund failed." }, { status: 500 });
   }
 };
+
 
 
 
