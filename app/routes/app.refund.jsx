@@ -1,13 +1,7 @@
-import {
-  Page, Layout, Card, Text, Box, Button, TextField,
-  IndexTable, Pagination, Thumbnail, Grid, Spinner
-} from "@shopify/polaris";
-import { useLoaderData, useSearchParams, useFetcher } from "@remix-run/react";
-import { useState, useEffect } from "react";
+// ✅ PART 1 — Loader and Action Logic
 import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 
-// ✅ PART 1 — Loader and Action Logic
 export const loader = async ({ request }) => {
   const { admin } = await authenticate.admin(request);
   const url = new URL(request.url);
@@ -86,18 +80,6 @@ export const loader = async ({ request }) => {
           metafields[node.key] = node.value;
         });
 
-        // Fetch refund history if this is the selected order
-        let refundHistory = [];
-        if (selectedOrderId === node.id) {
-          try {
-            const refundRes = await fetch(`https://phpstack-1419716-5486887.cloudwaysapps.com/refunds/${orderIdNum}`);
-            const refundData = await refundRes.json();
-            refundHistory = refundData.refunds || [];
-          } catch (err) {
-            console.warn("Failed to load refund history:", err);
-          }
-        }
-
         allOrders.push({
           ...node,
           cursor,
@@ -106,8 +88,7 @@ export const loader = async ({ request }) => {
           transactionId,
           gateway,
           locationId,
-          metafields,
-          refundHistory
+          metafields
         });
       }
     }
@@ -176,9 +157,23 @@ export const action = async ({ request }) => {
   }
 };
 
-// ✅ Main Component
+
+
+
+
+
+// ✅ app/routes/app.refund.jsx — Full Remix UI Code (Polaris + Refund Logic)
+
+// ✅ app/routes/app.refund.jsx
+import {
+  Page, Layout, Card, Text, Box, Button, TextField,
+  IndexTable, Pagination, Thumbnail, Grid
+} from "@shopify/polaris";
+import { useLoaderData, useSearchParams, useFetcher } from "@remix-run/react";
+import { useState, useEffect } from "react";
+
 export default function RefundPage() {
-  const { orders, total, page, selectedOrder: initialSelectedOrder } = useLoaderData();
+  const { orders, total, page, selectedOrder } = useLoaderData();
   const [searchParams, setSearchParams] = useSearchParams();
   const [selectedProducts, setSelectedProducts] = useState([]);
   const [shippingRefundSelected, setShippingRefundSelected] = useState(false);
@@ -187,85 +182,24 @@ export default function RefundPage() {
   const [emailCustomer, setEmailCustomer] = useState(true);
   const [refundMeta, setRefundMeta] = useState(null);
   const [filter, setFilter] = useState("");
-  const [refundHistory, setRefundHistory] = useState(initialSelectedOrder?.refundHistory || []);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [selectedOrder, setSelectedOrder] = useState(initialSelectedOrder);
+  const [refundHistory, setRefundHistory] = useState(null);
+  const [loadingHistory, setLoadingHistory] = useState(false);
   const fetcher = useFetcher();
   const totalPages = Math.ceil(total / 25);
 
-  // Filter function to hide fully refunded items
-  const filterRefundedItems = (lineItems, refunds) => {
-    if (!refunds || refunds.length === 0) return lineItems;
-    
-    const refundedMap = {};
-    refunds.forEach(refund => {
-      refund.refund_line_items.forEach(refItem => {
-        const lineId = refItem.line_item.id;
-        refundedMap[lineId] = (refundedMap[lineId] || 0) + refItem.quantity;
-      });
-    });
-
-    return lineItems
-      .map(item => {
-        const refundedQty = refundedMap[item.id] || 0;
-        const remainingQty = item.quantity - refundedQty;
-        if (remainingQty <= 0) return null;
-        return { ...item, quantity: remainingQty };
-      })
-      .filter(Boolean);
-  };
-
-  // Get the display line items (filtered)
-  const displayLineItems = filterRefundedItems(selectedOrder?.lineItems || [], refundHistory);
-
-  // Refresh handler
-  const handleRefresh = async () => {
-    if (!selectedOrder) return;
-    
-    setIsRefreshing(true);
-    try {
-      const orderIdNum = selectedOrder.id.split('/').pop();
-      const res = await fetch(`https://phpstack-1419716-5486887.cloudwaysapps.com/refunds/${orderIdNum}`);
-      const data = await res.json();
-      
-      setRefundHistory(data.refunds || []);
-      
-      // Update selected products to remove any that were fully refunded
-      const updatedLineItems = filterRefundedItems(selectedOrder.lineItems, data.refunds || []);
-      setSelectedProducts(prev => 
-        prev.filter(p => updatedLineItems.some(item => item.id === p.id))
-      );
-      
-      // Update the selected order with new line items
-      setSelectedOrder(prev => ({
-        ...prev,
-        lineItems: updatedLineItems,
-        refundHistory: data.refunds || []
-      }));
-    } catch (err) {
-      console.error("Refresh failed:", err);
-    } finally {
-      setIsRefreshing(false);
-    }
-  };
-
-  // Initialize state when order is selected
   useEffect(() => {
-    if (initialSelectedOrder) {
-      setSelectedOrder(initialSelectedOrder);
-      setRefundHistory(initialSelectedOrder.refundHistory || []);
+    if (selectedOrder) {
       setSelectedProducts([]);
       setShippingRefundSelected(false);
       setShippingRefundAmount(
-        initialSelectedOrder?.shippingLines?.edges?.[0]?.node?.originalPriceSet?.shopMoney?.amount || "0.00"
+        selectedOrder?.shippingLines?.edges?.[0]?.node?.originalPriceSet?.shopMoney?.amount || "0.00"
       );
       setReasonForRefund("");
       setEmailCustomer(true);
       setRefundMeta(null);
     }
-  }, [initialSelectedOrder]);
+  }, [selectedOrder]);
 
-  // Update refund meta when calculation completes
   useEffect(() => {
     if (fetcher.data?.transactionId && fetcher.data?.amount) {
       setRefundMeta({
@@ -275,7 +209,50 @@ export default function RefundPage() {
     }
   }, [fetcher.data]);
 
-  // Navigation functions
+  // ✅ Fetch refund history
+  useEffect(() => {
+    const fetchRefundHistory = async () => {
+      if (!selectedOrder) return;
+      setLoadingHistory(true);
+      try {
+        const orderIdNum = selectedOrder.id.split("/").pop();
+        const res = await fetch(`https://phpstack-1419716-5486887.cloudwaysapps.com/refunds/${orderIdNum}`);
+        const data = await res.json();
+        setRefundHistory(data.refunds || []);
+      } catch (err) {
+        console.error("❌ Error fetching refund history:", err);
+        setRefundHistory([]);
+      } finally {
+        setLoadingHistory(false);
+      }
+    };
+    fetchRefundHistory();
+  }, [selectedOrder]);
+
+  // ✅ Adjust refunded quantities or hide fully refunded products
+  useEffect(() => {
+    if (!refundHistory || !selectedOrder) return;
+
+    const refundedMap = {};
+    refundHistory.forEach(refund => {
+      refund.refund_line_items.forEach(refItem => {
+        const lineId = refItem.line_item.id;
+        refundedMap[lineId] = (refundedMap[lineId] || 0) + refItem.quantity;
+      });
+    });
+
+    const updatedLineItems = selectedOrder.lineItems
+      .map(item => {
+        const refundedQty = refundedMap[item.id] || 0;
+        const remainingQty = item.quantity - refundedQty;
+        if (remainingQty <= 0) return null;
+        return { ...item, quantity: remainingQty };
+      })
+      .filter(Boolean);
+
+    selectedOrder.lineItems = updatedLineItems;
+  }, [refundHistory, selectedOrder]);
+
   const updatePage = (newPage) => {
     const params = new URLSearchParams(searchParams);
     params.set("page", newPage);
@@ -294,7 +271,6 @@ export default function RefundPage() {
     setSearchParams(params);
   };
 
-  // Refund calculation
   const productSubtotal = selectedProducts.reduce(
     (sum, item) => sum + (parseFloat(item.price) * item.quantity), 0
   );
@@ -348,7 +324,7 @@ export default function RefundPage() {
     const transactionId = metafields?.transaction_id_number;
     const amount = refundMeta.amount;
 
-    if (paymentMode === 'paypal') {
+        if (paymentMode === 'paypal') {
       try {
         const res = await fetch("https://phpstack-1419716-5486887.cloudwaysapps.com/paypal-refund", {
           method: "POST",
@@ -404,7 +380,7 @@ export default function RefundPage() {
 
     setTimeout(() => {
       alert(`\n✅ Refund Successful!\n\nAmount: $${amount}\nTxn: ${refundMeta.transaction_id}`);
-      handleRefresh(); // Refresh after successful refund
+      goBack();
     }, 800);
   };
 
@@ -413,74 +389,55 @@ export default function RefundPage() {
       <div style={{ padding: 20 }}>
         {selectedOrder ? (
           <>
-            <Box paddingBlockEnd="400">
-              <Button onClick={goBack}>&larr; Back to Order List</Button>
-              <Button 
-                onClick={handleRefresh} 
-                loading={isRefreshing}
-                disabled={isRefreshing}
-                style={{ marginLeft: '10px' }}
-              >
-                Refresh Items
-              </Button>
-            </Box>
-            
+            <Button onClick={goBack}>&larr; Back to Order List</Button>
             <Grid>
               <Grid.Cell columnSpan={{ xs: 6, sm: 8 }}>
                 {/* ✅ Line Items */}
                 <Card>
                   <Text variant="headingMd">Order Line Items</Text>
-                  {displayLineItems.length === 0 ? (
-                    <Box padding="400">
-                      <Text variant="bodyMd" color="subdued">
-                        All items have been refunded or no items available.
-                      </Text>
-                    </Box>
-                  ) : (
-                    displayLineItems.map(item => {
-                      const existing = selectedProducts.find(p => p.id === item.id);
-                      const selectedQuantity = existing?.quantity || 0;
-                      return (
-                        <Box key={item.id} display="flex" alignItems="center" paddingBlock="300">
-                          <Thumbnail
-                            source={item.image?.originalSrc || "https://cdn.shopify.com/s/files/1/0752/6435/6351/files/no-image-icon.png"}
-                            alt={item.image?.altText || "Product image"}
-                            size="small"
-                          />
-                          <Box paddingInlineStart="300" flexGrow={1}>
-                            <Text fontWeight="bold">{item.title}</Text>
-                            <Text variant="bodySm">{item.sku}</Text>
-                            <Text variant="bodySm">
-                              ${item.discountedUnitPriceSet.shopMoney.amount} × {item.quantity}
-                            </Text>
-                          </Box>
-                          <input
-                            type="number"
-                            min="0"
-                            max={item.quantity}
-                            value={selectedQuantity}
-                            onChange={(e) => {
-                              const qty = parseInt(e.target.value) || 0;
-                              setSelectedProducts(prev => {
-                                const withoutThis = prev.filter(p => p.id !== item.id);
-                                if (qty > 0) {
-                                  return [...withoutThis, {
-                                    id: item.id,
-                                    title: item.title,
-                                    quantity: qty,
-                                    price: item.discountedUnitPriceSet.shopMoney.amount
-                                  }];
-                                } else {
-                                  return withoutThis;
-                                }
-                              });
-                            }}
-                            style={{ width: "50px", marginLeft: "10px" }}
-                          />
+                  {selectedOrder.lineItems.map(item => {
+                    const existing = selectedProducts.find(p => p.id === item.id);
+                    const selectedQuantity = existing?.quantity || 0;
+                    return (
+                      <Box key={item.id} display="flex" alignItems="center" paddingBlock="300">
+                        <Thumbnail
+                          source={item.image?.originalSrc || "https://cdn.shopify.com/s/files/1/0752/6435/6351/files/no-image-icon.png"}
+                          alt={item.image?.altText || "Product image"}
+                          size="small"
+                        />
+                        <Box paddingInlineStart="300" flexGrow={1}>
+                          <Text fontWeight="bold">{item.title}</Text>
+                          <Text variant="bodySm">{item.sku}</Text>
+                          <Text variant="bodySm">
+                            ${item.discountedUnitPriceSet.shopMoney.amount} × {item.quantity}
+                          </Text>
                         </Box>
-                      );
-                    })
-                  )}
+                        <input
+                          type="number"
+                          min="0"
+                          max={item.quantity}
+                          value={selectedQuantity}
+                          onChange={(e) => {
+                            const qty = parseInt(e.target.value) || 0;
+                            setSelectedProducts(prev => {
+                              const withoutThis = prev.filter(p => p.id !== item.id);
+                              if (qty > 0) {
+                                return [...withoutThis, {
+                                  id: item.id,
+                                  title: item.title,
+                                  quantity: qty,
+                                  price: item.discountedUnitPriceSet.shopMoney.amount
+                                }];
+                              } else {
+                                return withoutThis;
+                              }
+                            });
+                          }}
+                          style={{ width: "50px", marginLeft: "10px" }}
+                        />
+                      </Box>
+                    );
+                  })}
                 </Card>
 
                 {/* ✅ Shipping */}
@@ -513,12 +470,12 @@ export default function RefundPage() {
                 </Card>
 
                 {/* ✅ Refund History Section */}
-                <Card title="Refund History" sectioned>
-                  {isRefreshing ? (
-                    <Box padding="400" display="flex" justifyContent="center">
-                      <Spinner size="small" />
+                <Card title="Refunded Items" sectioned>
+                  {loadingHistory ? (
+                    <Box paddingBlockStart="200">
+                      <Text>Loading refund history...</Text>
                     </Box>
-                  ) : refundHistory.length > 0 ? (
+                  ) : refundHistory && refundHistory.length > 0 ? (
                     refundHistory.map((refund, refundIndex) => (
                       <div key={refundIndex}>
                         <Box paddingBlock="100">
@@ -591,22 +548,12 @@ export default function RefundPage() {
                     <Text fontWeight="bold">${refundTotal.toFixed(2)}</Text>
                   </Box>
                   <Box paddingBlockStart="200">
-                    <Button 
-                      fullWidth 
-                      variant="secondary" 
-                      onClick={handleCalculateRefund} 
-                      disabled={selectedProducts.length === 0 || isRefreshing}
-                    >
+                    <Button fullWidth variant="secondary" onClick={handleCalculateRefund} disabled={selectedProducts.length === 0}>
                       Calculate Refund
                     </Button>
                   </Box>
                   <Box paddingBlockStart="300">
-                    <Button 
-                      fullWidth 
-                      variant="primary" 
-                      onClick={handleRefund} 
-                      disabled={!refundMeta || selectedProducts.length === 0 || isRefreshing}
-                    >
+                    <Button fullWidth variant="primary" onClick={handleRefund} disabled={!refundMeta || selectedProducts.length === 0}>
                       {refundMeta
                         ? `Refund $${refundMeta.amount} (TX: ${refundMeta.transaction_id})`
                         : `Refund $${refundTotal.toFixed(2)}`}
@@ -675,3 +622,15 @@ export default function RefundPage() {
     </Page>
   );
 }
+
+
+
+
+
+
+
+
+
+
+
+
