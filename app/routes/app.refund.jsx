@@ -35,6 +35,11 @@ export const loader = async ({ request }) => {
                   node {
                     title
                     originalPriceSet { shopMoney { amount currencyCode } }
+                    taxLines {
+                      price
+                      rate
+                      title
+                    }
                   }
                 }
               }
@@ -44,6 +49,11 @@ export const loader = async ({ request }) => {
                     id title quantity sku
                     image { originalSrc altText }
                     discountedUnitPriceSet { shopMoney { amount currencyCode } }
+                    taxLines {
+                      price
+                      rate
+                      title
+                    }
                   }
                 }
               }
@@ -206,6 +216,8 @@ export const action = async ({ request }) => {
 
 
 
+
+
 // ✅ app/routes/app.refund.jsx — Full Remix UI Code (Polaris + Refund Logic)
 
 import {
@@ -312,12 +324,35 @@ useEffect(() => {
     setSearchParams(params);
   };
 
-  const productSubtotal = selectedProducts.reduce(
-    (sum, item) => sum + (parseFloat(item.price) * item.quantity), 0
-  );
-  const taxAmount = parseFloat(selectedOrder?.totalTaxSet?.shopMoney?.amount || 0);
-  const shippingRefundValue = shippingRefundSelected ? parseFloat(shippingRefundAmount || 0) : 0;
-  const refundTotal = productSubtotal + taxAmount + shippingRefundValue;
+  const fullOrderTax = parseFloat(selectedOrder?.totalTaxSet?.shopMoney?.amount || 0);
+
+const shippingTaxValue = parseFloat(
+  selectedOrder?.shippingLines?.edges?.[0]?.node?.taxLines?.[0]?.price || "0"
+);
+const shippingTax = shippingRefundSelected ? shippingTaxValue : 0;
+
+const fullSubtotal = selectedOrder?.lineItems?.reduce(
+  (sum, item) =>
+    sum + parseFloat(item.discountedUnitPriceSet?.shopMoney?.amount || 0) * item.quantity,
+  0
+);
+
+const productSubtotal = selectedProducts.reduce(
+  (sum, item) => sum + (parseFloat(item.price) * item.quantity), 0
+);
+
+const productTax = productSubtotal > 0 && fullSubtotal > 0
+  ? (fullOrderTax - shippingTaxValue) * (productSubtotal / fullSubtotal)
+  : 0;
+
+const taxAmount = productTax + shippingTax;
+
+const shippingRefundValue = shippingRefundSelected
+  ? parseFloat(shippingRefundAmount || 0)
+  : 0;
+
+const refundTotal = productSubtotal + taxAmount + shippingRefundValue;
+
 
   const preparePayload = () => ({
     mode: refundMeta ? "refund" : "calculate",
