@@ -446,26 +446,23 @@ export default function RefundPage() {
                   })}
                 </Card>
 
-             {parseFloat(shippingRefundAmount) > 0 && (
-  <Card title="Refund Shipping" sectioned>
-    <Box display="flex" alignItems="center" gap="300">
-      <input
-        type="checkbox"
-        checked={shippingRefundSelected}
-        onChange={e => setShippingRefundSelected(e.target.checked)}
-      />
-      <Text>Freight - ${shippingRefundAmount}</Text>
-      <input
-        type="text"
-        disabled={!shippingRefundSelected}
-        value={shippingRefundAmount}
-        onChange={e => setShippingRefundAmount(e.target.value)}
-        style={{ marginLeft: "auto", width: 100, padding: 5 }}
-      />
-    </Box>
-  </Card>
-)}
-
+                <Card title="Refund Shipping" sectioned>
+                  <Box display="flex" alignItems="center" gap="300">
+                    <input
+                      type="checkbox"
+                      checked={shippingRefundSelected}
+                      onChange={e => setShippingRefundSelected(e.target.checked)}
+                    />
+                    <Text>Freight - ${shippingRefundAmount}</Text>
+                    <input
+                      type="text"
+                      disabled={!shippingRefundSelected}
+                      value={shippingRefundAmount}
+                      onChange={e => setShippingRefundAmount(e.target.value)}
+                      style={{ marginLeft: "auto", width: 100, padding: 5 }}
+                    />
+                  </Box>
+                </Card>
 
                 <Card title="Reason for Refund" sectioned>
                   <TextField
