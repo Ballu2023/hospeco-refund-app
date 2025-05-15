@@ -186,34 +186,6 @@ export default function RefundPage() {
   const fetcher = useFetcher();
   const totalPages = Math.ceil(total / 25);
 
-
-  useEffect(() => {
-  if (!refundHistory || !selectedOrder) return;
-
-  const refundedMap = {};
-
-  // Create a map of refunded quantities by line item ID
-  refundHistory.forEach(refund => {
-    refund.refund_line_items.forEach(refItem => {
-      const lineId = refItem.line_item.id;
-      refundedMap[lineId] = (refundedMap[lineId] || 0) + refItem.quantity;
-    });
-  });
-
-  // Update line items list
-  const updatedLineItems = selectedOrder.lineItems
-    .map(item => {
-      const refundedQty = refundedMap[item.id] || 0;
-      const remainingQty = item.quantity - refundedQty;
-      if (remainingQty <= 0) return null; // fully refunded, remove
-      return { ...item, quantity: remainingQty }; // partially refunded
-    })
-    .filter(Boolean); // remove nulls
-
-  selectedOrder.lineItems = updatedLineItems;
-}, [refundHistory, selectedOrder]);
-
-
   useEffect(() => {
     if (selectedOrder) {
       setSelectedProducts([]);
@@ -326,34 +298,64 @@ export default function RefundPage() {
     const transactionId = metafields?.transaction_id_number;
     const amount = refundMeta.amount;
 
-    try {
-      if (paymentMode === 'paypal') {
+       if (paymentMode === 'paypal') {
+      try {
         const res = await fetch("https://phpstack-1419716-5486887.cloudwaysapps.com/paypal-refund", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ transactionId, amount }),
         });
+
         const data = await res.json();
-        if (!data.success) return alert("❌ PayPal refund failed: " + data.message);
-      } else if (paymentMode === 'stripe') {
+        if (!data.success) {
+          alert("❌ PayPal refund failed: " + data.message);
+          return;
+        }
+
+        const payload = preparePayload();
+        payload.variables.input.note = `Refunded via PayPal: ${data.paypalRefundId}`;
+        const formData = new FormData();
+        formData.append("body", JSON.stringify({ ...payload, mode: "refund" }));
+        fetcher.submit(formData, { method: "POST" });
+
+      } catch (err) {
+        alert("❌ PayPal refund error: " + err.message);
+        return;
+      }
+    } else if (paymentMode === 'stripe') {
+      try {
         const res = await fetch("https://phpstack-1419716-5486887.cloudwaysapps.com/stripe-refund", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ chargeId: transactionId, amount })
         });
+
         const data = await res.json();
-        if (!data.success) return alert("❌ Stripe refund failed: " + data.message);
+        if (!data.success) {
+          alert("❌ Stripe refund failed: " + data.message);
+          return;
+        }
+
+        const payload = preparePayload();
+        payload.variables.input.note = `Refunded via Stripe: ${data.stripeRefundId}`;
+        const formData = new FormData();
+        formData.append("body", JSON.stringify({ ...payload, mode: "refund" }));
+        fetcher.submit(formData, { method: "POST" });
+
+      } catch (err) {
+        alert("❌ Stripe refund error: " + err.message);
+        return;
       }
+    } else {
       const formData = new FormData();
       formData.append("body", JSON.stringify({ ...preparePayload(), mode: "refund" }));
       fetcher.submit(formData, { method: "POST" });
-      setTimeout(() => {
-        alert(`\n✅ Refund Successful!\n\nAmount: $${amount}\nTxn: ${refundMeta.transaction_id}`);
-        goBack();
-      }, 800);
-    } catch (err) {
-      alert("❌ Refund error: " + err.message);
     }
+
+    setTimeout(() => {
+      alert(`\n✅ Refund Successful!\n\nAmount: $${amount}\nTxn: ${refundMeta.transaction_id}`);
+      goBack();
+    }, 800);
   };
 
   return (
