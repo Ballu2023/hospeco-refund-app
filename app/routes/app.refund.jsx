@@ -1,3 +1,4 @@
+// ✅ app/routes/app.refund.jsx — LOADER and ACTION
 import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 
@@ -24,6 +25,11 @@ export const loader = async ({ request }) => {
               id name email createdAt sourceName displayFinancialStatus
               totalPriceSet { shopMoney { amount currencyCode } }
               totalTaxSet { shopMoney { amount } }
+              customer {
+                firstName
+                lastName
+                email
+              }
               shippingLines(first: 1) {
                 edges {
                   node {
@@ -53,6 +59,7 @@ export const loader = async ({ request }) => {
         }
       }
     `;
+
     const response = await admin.graphql(query, { variables: { first: 250, after: afterCursor } });
     const data = await response.json();
     const orders = data.data.orders.edges;
@@ -79,10 +86,8 @@ export const loader = async ({ request }) => {
           metafields[node.key] = node.value;
         });
 
-        // default raw lineItems
         let lineItems = node.lineItems.edges.map(({ node }) => node);
 
-        // ✅ If this is the selected order, fetch refund data and filter
         const selectedOrderNum = selectedOrderId?.split("/").pop();
         if (selectedOrderNum === orderIdNum) {
           try {
@@ -99,7 +104,6 @@ export const loader = async ({ request }) => {
               });
             });
 
-            // ✅ Adjust line items based on refunded quantity
             lineItems = lineItems
               .map(item => {
                 const itemIdPlain = item.id.split("/").pop();
@@ -114,6 +118,9 @@ export const loader = async ({ request }) => {
           }
         }
 
+        const customerName = `${node.customer?.firstName || ""} ${node.customer?.lastName || ""}`.trim();
+        const customerEmail = node.customer?.email || node.email;
+
         allOrders.push({
           ...node,
           cursor,
@@ -122,7 +129,9 @@ export const loader = async ({ request }) => {
           transactionId,
           gateway,
           locationId,
-          metafields
+          metafields,
+          customerName,
+          customerEmail
         });
       }
     }
@@ -135,7 +144,7 @@ export const loader = async ({ request }) => {
     const cleanSearch = search.replace("#", "");
     return (
       order.name.toLowerCase().replace("#", "").includes(cleanSearch) ||
-      order.email.toLowerCase().includes(cleanSearch)
+      order.customerEmail.toLowerCase().includes(cleanSearch)
     );
   });
 
@@ -144,6 +153,7 @@ export const loader = async ({ request }) => {
 
   return json({ orders: paginatedOrders, total: filteredOrders.length, page, selectedOrder });
 };
+
 export const action = async ({ request }) => {
   try {
     const formData = await request.formData();
@@ -415,6 +425,19 @@ useEffect(() => {
     }, 800);
   };
 
+
+function formatDate(dateStr) {
+  const date = new Date(dateStr);
+  const d = String(date.getDate()).padStart(2, "0");
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const y = date.getFullYear();
+  const h = String(date.getHours()).padStart(2, "0");
+  const min = String(date.getMinutes()).padStart(2, "0");
+  const s = String(date.getSeconds()).padStart(2, "0");
+  return `${d}/${m}/${y} ${h}:${min}:${s}`;
+}
+
+
   return (
     <Page fullWidth>
       <div style={{ padding: 20 }}>
@@ -612,34 +635,39 @@ useEffect(() => {
                   placeholder="Search #5521, email etc"
                 />
               </Box>
-              <IndexTable
-                resourceName={{ singular: "order", plural: "orders" }}
-                itemCount={orders.length}
-                selectedItemsCount={0}
-                headings={[
-                  { title: "Order Name" },
-                  { title: "Order ID" },
-                  { title: "Email" },
-                  { title: "Date" },
-                  { title: "Total" },
-                  { title: "Payment Status" }
-                ]}
-              >
-                {orders.map((order, index) => (
-                  <IndexTable.Row id={order.id} key={order.id} position={index}>
-                    <IndexTable.Cell>
-                      <Button variant="plain" onClick={() => showOrder(order.id)}>
-                        {order.name}
-                      </Button>
-                    </IndexTable.Cell>
-                    <IndexTable.Cell>{order.orderId}</IndexTable.Cell>
-                    <IndexTable.Cell>{order.email}</IndexTable.Cell>
-                    <IndexTable.Cell>{new Date(order.createdAt).toLocaleString()}</IndexTable.Cell>
-                    <IndexTable.Cell>{order.totalPriceSet.shopMoney.amount} {order.totalPriceSet.shopMoney.currencyCode}</IndexTable.Cell>
-                    <IndexTable.Cell>{order.displayFinancialStatus || "Unknown"}</IndexTable.Cell>
-                  </IndexTable.Row>
-                ))}
-              </IndexTable>
+             <IndexTable
+  resourceName={{ singular: "order", plural: "orders" }}
+  itemCount={orders.length}
+  selectedItemsCount={0}
+  headings={[
+    { title: "Order" },
+    { title: "Order ID" },
+    { title: "Customer" }, // ✅ Added
+    { title: "Email" },
+    { title: "Date" },
+    { title: "Total" },
+    { title: "Payment Status" }
+  ]}
+>
+  {orders.map((order, index) => (
+    <IndexTable.Row id={order.id} key={order.id} position={index}>
+      <IndexTable.Cell>
+        <Button variant="plain" onClick={() => showOrder(order.id)}>
+          {order.name}
+        </Button>
+      </IndexTable.Cell>
+      <IndexTable.Cell>{order.orderId}</IndexTable.Cell>
+      <IndexTable.Cell>{order.customerName || "N/A"}</IndexTable.Cell>
+      <IndexTable.Cell>{order.customerEmail}</IndexTable.Cell>
+      <IndexTable.Cell>{formatDate(order.createdAt)}</IndexTable.Cell>
+      <IndexTable.Cell>
+        {order.totalPriceSet.shopMoney.amount} {order.totalPriceSet.shopMoney.currencyCode}
+      </IndexTable.Cell>
+      <IndexTable.Cell>{order.displayFinancialStatus || "Unknown"}</IndexTable.Cell>
+    </IndexTable.Row>
+  ))}
+</IndexTable>
+
 
               <Box padding="300" display="flex" justifyContent="end">
                 <Pagination
