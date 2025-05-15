@@ -443,7 +443,37 @@ function formatDate(dateStr) {
       <div style={{ padding: 20 }}>
         {selectedOrder ? (
           <>
-            <Button onClick={goBack}>&larr; Back to Order List</Button>
+<Box paddingBlockEnd="300" display="flex" flexDirection="column" gap="200">
+  <Box display="flex" alignItems="center" gap="400">
+    <Text variant="headingLg" fontWeight="bold">
+      #{selectedOrder?.name?.replace("#", "")} • Refund
+    </Text>
+
+    {/* ✅ Optional Shopify-like status */}
+    {selectedOrder?.displayFinancialStatus && (
+      <Box paddingInlineStart="300">
+        <div
+          style={{
+            backgroundColor: "#f0f1f2",
+            borderRadius: "9999px",
+            padding: "2px 10px",
+            fontSize: "13px",
+            color: "#444",
+            display: "inline-block",
+          }}
+        >
+          {selectedOrder.displayFinancialStatus}
+        </div>
+      </Box>
+    )}
+  </Box>
+
+  <Box>
+    <Button plain onClick={goBack}>
+      &larr; Back to Order List
+    </Button>
+  </Box>
+</Box>
             <Grid>
               <Grid.Cell columnSpan={{ xs: 6, sm: 8 }}>
                 <Card>
