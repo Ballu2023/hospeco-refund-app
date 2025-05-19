@@ -610,6 +610,35 @@ export default function RefundPage() {
                                              <div
                                              key={refundIndex}
                                              >
+                                                  {refund.refund_line_items.map((item, itemIndex) => {
+                                                    const line = item.line_item;
+                                                                 const imageUrl = `https://cdn.shopify.com/s/files/1/0752/6435/6351/files/no-image-icon.png`;
+                                                                 return ( 
+                                                  <Box
+                                                       key={itemIndex} 
+                                                       paddingBlock="200" display="flex" gap="300" paddingBlockEnd={300}>
+                                                     <img src={imageUrl} alt={line?.title} width={60} height={60} style={{ borderRadius: 4, objectFit: 'cover' }} />
+                                                       <Box paddingBlockEnd={300}>
+                                                            <Text fontWeight="bold">{
+                                                                 line?.title || 
+                                                                 "Untitled Product"}</Text>
+                                                            <Text>SKU: {
+                                                                 line?.sku ||
+                                                                 "N/A"}</Text>
+                                                            <Text>Quantity Refunded: 
+                                                                 {item.quantity} 
+                                                            </Text>
+                                                            <Text>Amount Refunded: 
+                                                                 ${parseFloat(item.subtotal || 0).toFixed(2)}
+                                                            </Text>
+                                                            <Text>Tax: 
+                                                                 ${parseFloat(item.total_tax || 0).toFixed(2)}
+                                                            </Text>
+                                                       </Box>
+                                                       <Divider borderColor="border" />
+                                                  </Box>
+                                                  );
+                                                            })} 
                                                   <Box paddingBlock="200" paddingBlockEnd={300}>
 
                                                        <Text fontWeight="bold">Refund Date:</Text>
@@ -634,39 +663,11 @@ export default function RefundPage() {
                                                             <Text>Gateway: 
                                                                  {refund.transactions[0].gateway}
                                                             </Text>
-                                                            <Divider borderColor="border" />
                                                        </Box>
-                                                        )}
-                                                  </Box>
-                                                  {refund.refund_line_items.map((item, itemIndex) => {
-                                                    const line = item.line_item;
-                                                                 const imageUrl = `https://cdn.shopify.com/s/files/1/0752/6435/6351/files/no-image-icon.png`;
-                                                                 return ( 
-                                                  <Box
-                                                       key={itemIndex} 
-                                                       paddingBlock="200" display="flex" gap="300" paddingBlockEnd={300}>
-                                                     <img src={imageUrl} alt={line?.title} width={60} height={60} style={{ borderRadius: 4, objectFit: 'cover' }} />
-                                                       <Box>
-                                                            <Text fontWeight="bold">{
-                                                                 line?.title || 
-                                                                 "Untitled Product"}</Text>
-                                                            <Text>SKU: {
-                                                                 line?.sku ||
-                                                                 "N/A"}</Text>
-                                                            <Text>Quantity Refunded: 
-                                                                 {item.quantity} 
-                                                            </Text>
-                                                            <Text>Amount Refunded: 
-                                                                 ${parseFloat(item.subtotal || 0).toFixed(2)}
-                                                            </Text>
-                                                            <Text>Tax: 
-                                                                 ${parseFloat(item.total_tax || 0).toFixed(2)}
-                                                            </Text>
-                                                       </Box>
+                                                       )}
                                                        <Divider borderColor="border" />
                                                   </Box>
-                                                  );
-                                                            })} 
+                                                  
                                                   {refund.refund_shipping_lines?.length > 0 && (
                                                   <Box paddingBlock="200" paddingBlockEnd={300}>
                                                        <Text fontWeight="bold">Shipping Refunded</Text>
