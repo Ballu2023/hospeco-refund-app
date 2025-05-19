@@ -610,7 +610,7 @@ export default function RefundPage() {
                                              <div
                                              key={refundIndex}
                                              >
-                                                  <Box paddingBlock="200">
+                                                  <Box paddingBlock="200" paddingBlockEnd={300}>
 
                                                        <Text fontWeight="bold">Refund Date:</Text>
                                                        <Text>
@@ -644,9 +644,8 @@ export default function RefundPage() {
                                                                  return ( 
                                                   <Box
                                                        key={itemIndex} 
-                                                       paddingBlock="200" borderBottom display="flex" gap="300">
-                                                     <img src={imageUrl} alt={line?.title} width={60} height={60} style={{ borderRadius: 4, objectFit: 'cover' }} /> 
-                                                       <img src={'https://cdn.shopify.com/s/files/1/0752/6435/6351/files/no-image-icon.png'} width={60} height={60} style={{ borderRadius: 4, objectFit: 'cover' }} />
+                                                       paddingBlock="200" display="flex" gap="300" paddingBlockEnd={300}>
+                                                     <img src={imageUrl} alt={line?.title} width={60} height={60} style={{ borderRadius: 4, objectFit: 'cover' }} />
                                                        <Box>
                                                             <Text fontWeight="bold">{
                                                                  line?.title || 
@@ -669,7 +668,7 @@ export default function RefundPage() {
                                                   );
                                                             })} 
                                                   {refund.refund_shipping_lines?.length > 0 && (
-                                                  <Box paddingBlock="200" borderBottom>
+                                                  <Box paddingBlock="200" paddingBlockEnd={300}>
                                                        <Text fontWeight="bold">Shipping Refunded</Text>
                                                        <Text>
                                                             Amount:
