@@ -244,19 +244,22 @@ export default function RefundPage() {
      const [loadingHistory, setLoadingHistory] = useState(false);
      const fetcher = useFetcher();
      const totalPages = Math.ceil(total / 25);
+const prevOrderIdRef = useRef(null);
 
-     useEffect(() => {
-          if (selectedOrder) {
-               setSelectedProducts([]);
-               setShippingRefundSelected(false);
-               setShippingRefundAmount(
-                    selectedOrder?.shippingLines?.edges?.[0]?.node?.originalPriceSet?.shopMoney?.amount || "0.00"
-               );
-               setReasonForRefund("");
-               setEmailCustomer(true);
-               setRefundMeta(null);
-          }
-     }, [selectedOrder]);
+useEffect(() => {
+  if (selectedOrder?.id !== prevOrderIdRef.current) {
+    prevOrderIdRef.current = selectedOrder?.id;
+    setSelectedProducts([]);
+    setShippingRefundSelected(false);
+    setShippingRefundAmount(
+      selectedOrder?.shippingLines?.edges?.[0]?.node?.originalPriceSet?.shopMoney?.amount || "0.00"
+    );
+    setReasonForRefund("");
+    setEmailCustomer(true);
+    setRefundMeta(null);
+  }
+}, [selectedOrder]);
+
 
      useEffect(() => {
           if (fetcher.data?.transactionId && fetcher.data?.amount) {
