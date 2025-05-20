@@ -613,41 +613,32 @@ useEffect(() => {
                                              <div
                                              key={refundIndex}
                                              >
-                                                  {refund.refund_line_items.map((item, itemIndex) => {
-                                                    const line = item.line_item;
-const imageUrl = line?.image?.originalSrc || "https://cdn.shopify.com/s/files/1/0752/6435/6351/files/no-image-icon.png";
-                                                                 return ( 
-                                                  <Box
-                                                       key={itemIndex} 
-                                                       paddingBlock="200" display="flex" gap="300" paddingBlockEnd={300}>
-<img
-  src={imageUrl}
-  alt={line?.title || "Refunded product"}
-  width={60}
-  height={60}
-  style={{ borderRadius: 4, objectFit: 'cover' }}
-/>
-                                                       <Box paddingBlockEnd={300}>
-                                                            <Text fontWeight="bold">{
-                                                                 line?.title || 
-                                                                 "Untitled Product"}</Text>
-                                                            <Text>SKU: {
-                                                                 line?.sku ||
-                                                                 "N/A"}</Text>
-                                                            <Text>Quantity Refunded: 
-                                                                 {item.quantity} 
-                                                            </Text>
-                                                            <Text>Amount Refunded: 
-                                                                 ${parseFloat(item.subtotal || 0).toFixed(2)}
-                                                            </Text>
-                                                            <Text>Tax: 
-                                                                 ${parseFloat(item.total_tax || 0).toFixed(2)}
-                                                            </Text>
-                                                       </Box>
-                                                       <Divider borderColor="border" />
-                                                  </Box>
-                                                  );
-                                                            })} 
+                                         {refund.refund_line_items.map((item, itemIndex) => {
+  const imageUrl = item?.image || "https://cdn.shopify.com/s/files/1/0752/6435/6351/files/no-image-icon.png";
+
+  return (
+    <Box key={itemIndex} paddingBlock="200" display="flex" gap="300" paddingBlockEnd={300}>
+      <img
+        src={imageUrl}
+        alt={item?.title || "Refunded product"}
+        width={60}
+        height={60}
+        style={{ borderRadius: 4, objectFit: 'cover' }}
+      />
+
+      <Box paddingBlockEnd={300}>
+        <Text fontWeight="bold">{item?.title || "Untitled Product"}</Text>
+        <Text>SKU: {item?.sku || "N/A"}</Text>
+        <Text>Quantity Refunded: {item.quantity}</Text>
+        <Text>Amount Refunded: ${parseFloat(item.subtotal || 0).toFixed(2)}</Text>
+        <Text>Tax: ${parseFloat(item.total_tax || 0).toFixed(2)}</Text>
+      </Box>
+      <Divider borderColor="border" />
+    </Box>
+  );
+})}
+
+                                                          
                                                   <Box paddingBlock="200" paddingBlockEnd={300}>
 
                                                        <Text fontWeight="bold">Refund Date:</Text>
