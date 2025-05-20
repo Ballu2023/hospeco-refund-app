@@ -330,34 +330,48 @@ useEffect(() => {
           setSearchParams(params);
      };
 
-     const fullOrderTax = parseFloat(selectedOrder?.totalTaxSet?.shopMoney?.amount || 0);
+  // ✅ Parse total tax on the order
+const fullOrderTax = parseFloat(selectedOrder?.totalTaxSet?.shopMoney?.amount || "0");
 
-     const shippingTaxValue = parseFloat(
-          selectedOrder?.shippingLines?.edges?.[0]?.node?.taxLines?.[0]?.price || "0"
-     );
-     const shippingTax = shippingRefundSelected ? shippingTaxValue : 0;
+// ✅ New: refunded shipping amount (user input)
+const refundedShippingAmount = shippingRefundSelected
+  ? parseFloat(shippingRefundAmount || "0")
+  : 0;
 
-     const fullSubtotal = selectedOrder?.lineItems?.reduce(
-          (sum, item) =>
-               sum + parseFloat(item.discountedUnitPriceSet?.shopMoney?.amount || 0) * item.quantity,
-          0
-     );
+// ✅ New: full original shipping & shipping tax
+const fullShippingAmount = parseFloat(
+  selectedOrder?.shippingLines?.edges?.[0]?.node?.originalPriceSet?.shopMoney?.amount || "0"
+);
+const fullShippingTax = parseFloat(
+  selectedOrder?.shippingLines?.edges?.[0]?.node?.taxLines?.[0]?.price || "0"
+);
 
-     const productSubtotal = selectedProducts.reduce(
-          (sum, item) => sum + (parseFloat(item.price) * item.quantity), 0
-     );
+// ✅ Correct shipping tax calculation (only for refunded portion)
+const shippingTax = shippingRefundSelected && fullShippingAmount > 0
+  ? (fullShippingTax * (refundedShippingAmount / fullShippingAmount))
+  : 0;
 
-     const productTax = productSubtotal > 0 && fullSubtotal > 0
-          ? (fullOrderTax - shippingTaxValue) * (productSubtotal / fullSubtotal)
-          : 0;
+// ✅ Full product subtotal from the order
+const fullSubtotal = selectedOrder?.lineItems?.reduce(
+  (sum, item) =>
+    sum + parseFloat(item.discountedUnitPriceSet?.shopMoney?.amount || "0") * item.quantity,
+  0
+);
 
-     const taxAmount = productTax + shippingTax;
+// ✅ Selected product subtotal for refund
+const productSubtotal = selectedProducts.reduce(
+  (sum, item) => sum + (parseFloat(item.price) * item.quantity), 0
+);
 
-     const shippingRefundValue = shippingRefundSelected
-          ? parseFloat(shippingRefundAmount || 0)
-          : 0;
+// ✅ Calculate proportional product tax only
+const productTax = productSubtotal > 0 && fullSubtotal > 0
+  ? (fullOrderTax - fullShippingTax) * (productSubtotal / fullSubtotal)
+  : 0;
 
-     const refundTotal = productSubtotal + taxAmount + shippingRefundValue;
+// ✅ Final tax and total refund calculation
+const taxAmount = productTax + shippingTax;
+const refundTotal = productSubtotal + taxAmount + refundedShippingAmount;
+
 
 
      const preparePayload = () => ({
@@ -708,7 +722,7 @@ useEffect(() => {
                                                   </Box>
                                                   <Box display="flex" justifyContent="space-between" paddingBlockStart="100">
                                                        <Text fontWeight="bold">Shipping</Text>
-                                                       <Text>${shippingRefundValue.toFixed(2)}</Text>
+                                                       <Text>${refundedShippingAmount.toFixed(2)}</Text>
                                                   </Box>
                                                   <Box display="flex" justifyContent="space-between" paddingBlockStart="300">
                                                        <Text fontWeight="bold">Refund total</Text>
