@@ -112,15 +112,20 @@ export const loader = async ({ request }) => {
                                    });
                               });
 
-                              lineItems = lineItems
-                                   .map(item => {
-                                        const itemIdPlain = item.id.split("/").pop();
-                                        const refundedQty = refundedMap[itemIdPlain] || 0;
-                                        const remainingQty = item.quantity - refundedQty;
-                                        if (remainingQty <= 0) return null;
-                                        return { ...item, quantity: remainingQty };
-                                   })
-                                   .filter(Boolean);
+                             lineItems = lineItems
+  .map(item => {
+    const itemIdPlain = item.id.split("/").pop();
+    const refundedQty = refundedMap[itemIdPlain] || 0;
+    const remainingQty = item.quantity - refundedQty;
+    if (remainingQty <= 0) return null;
+    return {
+      ...item,
+      quantity: remainingQty,
+      originalQuantityRefunded: refundedQty, // ✅ store for tax fix
+    };
+  })
+  .filter(Boolean);
+
                          } catch (err) {
                               console.error("❌ Failed to fetch refund data:", err);
                          }
@@ -372,12 +377,11 @@ const productTax = selectedProducts.reduce((totalTax, selected) => {
     (sum, tax) => sum + parseFloat(tax.price || 0), 0
   );
 
-  const originalQuantity = originalItem.quantity + (selected.originalQuantityRefunded || 0);
-  const unitTax = totalItemTax / originalQuantity;
-
-  const actualTax = isNaN(unitTax) ? 0 : unitTax * selected.quantity;
-  return totalTax + actualTax;
+  const totalQty = originalItem.quantity + (originalItem.originalQuantityRefunded || 0);
+  const unitTax = totalQty > 0 ? totalItemTax / totalQty : 0;
+  return totalTax + unitTax * selected.quantity;
 }, 0);
+
 
 
 // ✅ Final tax and total refund calculation
