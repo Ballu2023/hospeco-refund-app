@@ -228,7 +228,7 @@ import {
      InlineStack
 } from "@shopify/polaris";
 import { useLoaderData, useSearchParams, useFetcher } from "@remix-run/react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 export default function RefundPage() {
      const { orders, total, page, selectedOrder } = useLoaderData();
