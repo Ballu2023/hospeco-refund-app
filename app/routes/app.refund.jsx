@@ -722,7 +722,8 @@ const refundTotal = productSubtotal + taxAmount + refundedShippingAmount;
                                                   </Box>
                                                   <Box display="flex" justifyContent="space-between" paddingBlockStart="100">
                                                        <Text fontWeight="bold">Shipping</Text>
-                                                       <Text>${shippingRefundValue.toFixed(2)}</Text>
+                                                       <Text>${refundedShippingAmount.toFixed(2)}
+</Text>
                                                   </Box>
                                                   <Box display="flex" justifyContent="space-between" paddingBlockStart="300">
                                                        <Text fontWeight="bold">Refund total</Text>
