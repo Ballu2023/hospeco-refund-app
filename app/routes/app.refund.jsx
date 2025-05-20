@@ -14,7 +14,7 @@ export const loader = async ({ request }) => {
      let afterCursor = null;
      const allOrders = [];
 
-     while (hasNextPage && allOrders.length < 100) {
+     while (hasNextPage && allOrders.length < 1000) {
           const query = `
       query GetOrders($first: Int!, $after: String) {
         orders(first: $first, after: $after, reverse: true) {
@@ -228,7 +228,7 @@ import {
      InlineStack
 } from "@shopify/polaris";
 import { useLoaderData, useSearchParams, useFetcher } from "@remix-run/react";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 
 export default function RefundPage() {
      const { orders, total, page, selectedOrder } = useLoaderData();
@@ -244,22 +244,19 @@ export default function RefundPage() {
      const [loadingHistory, setLoadingHistory] = useState(false);
      const fetcher = useFetcher();
      const totalPages = Math.ceil(total / 25);
-const prevOrderIdRef = useRef(null);
 
-useEffect(() => {
-  if (selectedOrder?.id !== prevOrderIdRef.current) {
-    prevOrderIdRef.current = selectedOrder?.id;
-    setSelectedProducts([]);
-    setShippingRefundSelected(false);
-    setShippingRefundAmount(
-      selectedOrder?.shippingLines?.edges?.[0]?.node?.originalPriceSet?.shopMoney?.amount || "0.00"
-    );
-    setReasonForRefund("");
-    setEmailCustomer(true);
-    setRefundMeta(null);
-  }
-}, [selectedOrder]);
-
+     useEffect(() => {
+          if (selectedOrder) {
+               setSelectedProducts([]);
+               setShippingRefundSelected(false);
+               setShippingRefundAmount(
+                    selectedOrder?.shippingLines?.edges?.[0]?.node?.originalPriceSet?.shopMoney?.amount || "0.00"
+               );
+               setReasonForRefund("");
+               setEmailCustomer(true);
+               setRefundMeta(null);
+          }
+     }, [selectedOrder]);
 
      useEffect(() => {
           if (fetcher.data?.transactionId && fetcher.data?.amount) {
@@ -613,32 +610,35 @@ useEffect(() => {
                                              <div
                                              key={refundIndex}
                                              >
-                                         {refund.refund_line_items.map((item, itemIndex) => {
-  const imageUrl = item?.image || "https://cdn.shopify.com/s/files/1/0752/6435/6351/files/no-image-icon.png";
-
-  return (
-    <Box key={itemIndex} paddingBlock="200" display="flex" gap="300" paddingBlockEnd={300}>
-      <img
-        src={imageUrl}
-        alt={item?.title || "Refunded product"}
-        width={60}
-        height={60}
-        style={{ borderRadius: 4, objectFit: 'cover' }}
-      />
-
-      <Box paddingBlockEnd={300}>
-        <Text fontWeight="bold">{item?.title || "Untitled Product"}</Text>
-        <Text>SKU: {item?.sku || "N/A"}</Text>
-        <Text>Quantity Refunded: {item.quantity}</Text>
-        <Text>Amount Refunded: ${parseFloat(item.subtotal || 0).toFixed(2)}</Text>
-        <Text>Tax: ${parseFloat(item.total_tax || 0).toFixed(2)}</Text>
-      </Box>
-      <Divider borderColor="border" />
-    </Box>
-  );
-})}
-
-                                                          
+                                                  {refund.refund_line_items.map((item, itemIndex) => {
+                                                    const line = item.line_item;
+                                                                 const imageUrl = `https://cdn.shopify.com/s/files/1/0752/6435/6351/files/no-image-icon.png`;
+                                                                 return ( 
+                                                  <Box
+                                                       key={itemIndex} 
+                                                       paddingBlock="200" display="flex" gap="300" paddingBlockEnd={300}>
+                                                     <img src={imageUrl} alt={line?.title} width={60} height={60} style={{ borderRadius: 4, objectFit: 'cover' }} />
+                                                       <Box paddingBlockEnd={300}>
+                                                            <Text fontWeight="bold">{
+                                                                 line?.title || 
+                                                                 "Untitled Product"}</Text>
+                                                            <Text>SKU: {
+                                                                 line?.sku ||
+                                                                 "N/A"}</Text>
+                                                            <Text>Quantity Refunded: 
+                                                                 {item.quantity} 
+                                                            </Text>
+                                                            <Text>Amount Refunded: 
+                                                                 ${parseFloat(item.subtotal || 0).toFixed(2)}
+                                                            </Text>
+                                                            <Text>Tax: 
+                                                                 ${parseFloat(item.total_tax || 0).toFixed(2)}
+                                                            </Text>
+                                                       </Box>
+                                                       <Divider borderColor="border" />
+                                                  </Box>
+                                                  );
+                                                            })} 
                                                   <Box paddingBlock="200" paddingBlockEnd={300}>
 
                                                        <Text fontWeight="bold">Refund Date:</Text>
