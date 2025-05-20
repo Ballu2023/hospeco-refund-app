@@ -14,7 +14,7 @@ export const loader = async ({ request }) => {
      let afterCursor = null;
      const allOrders = [];
 
-     while (hasNextPage && allOrders.length < 1000) {
+     while (hasNextPage && allOrders.length < 100) {
           const query = `
       query GetOrders($first: Int!, $after: String) {
         orders(first: $first, after: $after, reverse: true) {
