@@ -364,15 +364,9 @@ const productSubtotal = selectedProducts.reduce(
 );
 
 // ✅ Calculate proportional product tax only
-const productTax = selectedProducts.reduce((totalTax, selected) => {
-  const originalItem = selectedOrder.lineItems.find(item => item.id === selected.id);
-  if (!originalItem || !originalItem.taxLines?.length) return totalTax;
-
-  const totalItemTax = originalItem.taxLines.reduce((sum, tax) => sum + parseFloat(tax.price || 0), 0);
-  const unitTax = totalItemTax / originalItem.quantity;
-  return totalTax + (unitTax * selected.quantity);
-}, 0);
-
+const productTax = productSubtotal > 0 && fullSubtotal > 0
+  ? (fullOrderTax - fullShippingTax) * (productSubtotal / fullSubtotal)
+  : 0;
 
 // ✅ Final tax and total refund calculation
 const taxAmount = productTax + shippingTax;
