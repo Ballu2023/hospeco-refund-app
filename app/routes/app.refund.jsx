@@ -241,7 +241,6 @@ export default function RefundPage() {
      const [selectedProducts, setSelectedProducts] = useState([]);
      const [shippingRefundSelected, setShippingRefundSelected] = useState(false);
      const [shippingRefundAmount, setShippingRefundAmount] = useState("0.00");
-     const [shippingError, setShippingError] = useState("");
      const [reasonForRefund, setReasonForRefund] = useState("");
      const [emailCustomer, setEmailCustomer] = useState(true);
      const [refundMeta, setRefundMeta] = useState(null);
@@ -250,7 +249,7 @@ export default function RefundPage() {
      const [loadingHistory, setLoadingHistory] = useState(false);
      const fetcher = useFetcher();
      const totalPages = Math.ceil(total / 25);
-const prevOrderIdRef = useRef(null);
+     const prevOrderIdRef = useRef(null);
 
 useEffect(() => {
   if (selectedOrder?.id !== prevOrderIdRef.current) {
@@ -601,59 +600,39 @@ const refundTotal = productSubtotal + taxAmount + refundedShippingAmount;
                                              })}
                                         </Card>
 
-                      <Card title="Refund Shipping" sectioned>
-  {parseFloat(shippingRefundAmount) > 0 ? (
-    <InlineGrid columns={['twoThirds', 'oneHalf']}>
-      <InlineStack gap={300} blockAlign="center">
-        <input
-          type="checkbox"
-          checked={shippingRefundSelected}
-          onChange={e => {
-            setShippingRefundSelected(e.target.checked);
-            setShippingError(""); // reset error when toggled
-          }}
-        />
-        <Text>Freight - Max Refundable: ${shippingRefundAmount}</Text>
-      </InlineStack>
+                                        <Card title="Refund Shipping" sectioned>
+                                             {parseFloat(shippingRefundAmount) > 0 ? (
+                                             <InlineGrid columns={['twoThirds', 'oneHalf']} >
 
-      <Box paddingInlineEnd={400} display="flex" flexDirection="column">
-        <input
-          type="text"
-          disabled={!shippingRefundSelected}
-          value={shippingRefundAmount}
-          onChange={(e) => {
-            const value = e.target.value;
-            const max = parseFloat(shippingRefundAmount || "0");
-            const entered = parseFloat(value || "0");
+                                                  <InlineStack gap={300} blockAlign="center">
+                                                       <input
+                                                            type="checkbox"
+                                                            checked={shippingRefundSelected}
+                                                            onChange={e => setShippingRefundSelected(e.target.checked)}
+                                                       />
+                                                       <Text>Freight - Max Refundable: ${shippingRefundAmount}</Text>
+                                                  </InlineStack>
 
-            if (entered > max) {
-              setShippingError(`❌ You can refund up to $${max.toFixed(2)} only.`);
-              setShippingRefundAmount(max.toFixed(2)); // force back to max
-            } else {
-              setShippingRefundAmount(value);
-              setShippingError("");
-            }
-          }}
-          style={{
-            width: "80px",
-            height: '35px',
-            border: shippingError ? '1px solid red' : '1px solid',
-            borderRadius: '10px',
-            paddingInline: '15px'
-          }}
-        />
-        {shippingError && (
-          <Text color="critical" size="small" paddingBlockStart="100">{shippingError}</Text>
-        )}
-      </Box>
-    </InlineGrid>
-  ) : (
-    <Banner>
-      <p>Shipping has already been fully refunded.</p>
-    </Banner>
-  )}
-</Card>
+                                                  <Text as="span" alignment="end">
+                                                       <Box paddingInlineEnd={400}>
+                                                       <input
+                                                            type="text"
+                                                            disabled={!shippingRefundSelected}
+                                                            value={shippingRefundAmount}
+                                                            onChange={e => setShippingRefundAmount(e.target.value)}
+                                                            // style={{ marginLeft: "auto", width: 100, padding: 5 }}
+                                                            style={{ width: "80px", height: '35px', border: '1px solid', borderRadius: '10px', paddingInline: '15px' }}
 
+                                                       />
+                                                       </Box>
+                                                  </Text>
+                                             </InlineGrid>
+                                             ) : (
+                                                  <Banner>
+                                                       <p>Shipping has already been fully refunded.</p>
+                                                  </Banner>
+                                             )}
+                                        </Card>
 
 
                                         <Card title="Reason for Refund" sectioned>
@@ -784,12 +763,7 @@ const refundTotal = productSubtotal + taxAmount + refundedShippingAmount;
                                                        </Button>
                                                   </Box>
                                                   <Box paddingBlockStart="300">
-<Button
-  fullWidth
-  variant="primary"
-  onClick={handleRefund}
-  disabled={!refundMeta || selectedProducts.length === 0 || !!shippingError} // 🔐 block if error
->
+                                                       <Button fullWidth variant="primary" onClick={handleRefund} disabled={!refundMeta || selectedProducts.length === 0}>
                                                             {refundMeta
                                                                  ? `Refund $${refundMeta.amount} (TX: ${refundMeta.transaction_id})`
                                                                  : `Refund $${refundTotal.toFixed(2)}`}
