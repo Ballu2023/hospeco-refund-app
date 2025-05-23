@@ -557,30 +557,42 @@ const refundTotal = productSubtotal + taxAmount + refundedShippingAmount;
                                                                       ${item.discountedUnitPriceSet.shopMoney.amount} × {item.quantity}
                                                                  </Text>
 
-                                                                 <input
-                                                                      type="number"
-                                                                      min="0"
-                                                                      max={item.quantity}
-                                                                      value={selectedQuantity}
-                                                                      onChange={(e) => {
-                                                                           const qty = parseInt(e.target.value) || 0;
-                                                                           setSelectedProducts(prev => {
-                                                                                const withoutThis = prev.filter(p => p.id !== item.id);
-                                                                                if (qty > 0) {
-                                                                                     return [...withoutThis, {
-                                                                                          id: item.id,
-                                                                                          title: item.title,
-                                                                                          quantity: qty,
-                                                                                          price: item.discountedUnitPriceSet.shopMoney.amount
-                                                                                     }];
-                                                                                } else {
-                                                                                     return withoutThis;
-                                                                                }
-                                                                           });
-                                                                      }}
-                                                                      style={{ width: "80px", border: '1px solid', borderRadius: '10px', paddingInline: '15px', height: '35px' }}
+                                      <div style={{ display: "flex", flexDirection: "column" }}>
+  <input
+    type="number"
+    min="0"
+    max={item.quantity}
+    value={selectedQuantity}
+    onChange={(e) => {
+      const qty = parseInt(e.target.value) || 0;
+      if (qty > item.quantity) {
+        alert(`❌ You cannot refund more than ${item.quantity} item(s).`);
+        return;
+      }
+      setSelectedProducts(prev => {
+        const withoutThis = prev.filter(p => p.id !== item.id);
+        if (qty > 0) {
+          return [...withoutThis, {
+            id: item.id,
+            title: item.title,
+            quantity: qty,
+            price: item.discountedUnitPriceSet.shopMoney.amount
+          }];
+        } else {
+          return withoutThis;
+        }
+      });
+    }}
+    style={{
+      width: "80px",
+      border: '1px solid',
+      borderRadius: '10px',
+      paddingInline: '15px',
+      height: '35px'
+    }}
+  />
+</div>
 
-                                                                 />
 
                                                             </InlineGrid>
                                                        </Box>
