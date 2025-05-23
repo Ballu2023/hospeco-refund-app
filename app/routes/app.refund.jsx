@@ -497,6 +497,23 @@ const refundTotal = productSubtotal + taxAmount + refundedShippingAmount;
      };
 
 
+function calculateMaxShippingRefund(selectedOrder, refundHistory) {
+  const originalShipping = parseFloat(
+    selectedOrder?.shippingLines?.edges?.[0]?.node?.originalPriceSet?.shopMoney?.amount || "0"
+  );
+
+  let totalShippingRefunded = 0;
+  refundHistory?.forEach(refund => {
+    refund.refund_shipping_lines?.forEach(ship => {
+      totalShippingRefunded += parseFloat(ship.subtotal_amount_set?.shop_money?.amount || 0);
+    });
+  });
+
+  return Math.max(originalShipping - totalShippingRefunded, 0).toFixed(2);
+}
+
+
+
      function formatDate(dateStr) {
           const date = new Date(dateStr);
           const d = String(date.getDate()).padStart(2, "0");
@@ -615,7 +632,7 @@ const refundTotal = productSubtotal + taxAmount + refundedShippingAmount;
 
                                                   <Text as="span" alignment="end">
                                                        <Box paddingInlineEnd={400}>
-                                                      <input
+                                                   <input
   type="text"
   disabled={!shippingRefundSelected}
   value={shippingRefundAmount}
@@ -623,28 +640,31 @@ const refundTotal = productSubtotal + taxAmount + refundedShippingAmount;
     const value = e.target.value;
     const entered = parseFloat(value || "0");
 
-    const originalShipping = parseFloat(
-      selectedOrder?.shippingLines?.edges?.[0]?.node?.originalPriceSet?.shopMoney?.amount || "0"
-    );
+    const maxRefundable = parseFloat(calculateMaxShippingRefund(selectedOrder, refundHistory));
 
-    let totalShippingRefunded = 0;
-    refundHistory?.forEach(refund => {
-      refund.refund_shipping_lines?.forEach(ship => {
-        totalShippingRefunded += parseFloat(ship.subtotal_amount_set?.shop_money?.amount || 0);
-      });
-    });
-
-    const maxRefundable = Math.max(originalShipping - totalShippingRefunded, 0);
+    if (isNaN(entered) || entered === 0 || value === "") {
+      // Reset to original max value
+      setShippingRefundAmount(maxRefundable);
+      return;
+    }
 
     if (entered > maxRefundable) {
       alert(`❌ Maximum refundable shipping is $${maxRefundable.toFixed(2)}`);
+      setShippingRefundAmount(maxRefundable); // auto-correct back
       return;
     }
 
     setShippingRefundAmount(value);
   }}
-  style={{ width: "80px", height: '35px', border: '1px solid', borderRadius: '10px', paddingInline: '15px' }}
+  style={{
+    width: "80px",
+    height: '35px',
+    border: '1px solid',
+    borderRadius: '10px',
+    paddingInline: '15px'
+  }}
 />
+
 
                                                        </Box>
                                                   </Text>
