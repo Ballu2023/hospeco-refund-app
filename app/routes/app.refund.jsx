@@ -241,7 +241,6 @@ export default function RefundPage() {
      const [selectedProducts, setSelectedProducts] = useState([]);
      const [shippingRefundSelected, setShippingRefundSelected] = useState(false);
      const [shippingRefundAmount, setShippingRefundAmount] = useState("0.00");
-     const [shippingError, setShippingError] = useState(""); // ✅ ADD THIS LINE
      const [reasonForRefund, setReasonForRefund] = useState("");
      const [emailCustomer, setEmailCustomer] = useState(true);
      const [refundMeta, setRefundMeta] = useState(null);
@@ -601,61 +600,39 @@ const refundTotal = productSubtotal + taxAmount + refundedShippingAmount;
                                              })}
                                         </Card>
 
-                                       <Card title="Refund Shipping" sectioned>
-  {parseFloat(shippingRefundAmount) > 0 ? (
-    <InlineGrid columns={['twoThirds', 'oneHalf']}>
-      <InlineStack gap={300} blockAlign="center">
-        <input
-          type="checkbox"
-          checked={shippingRefundSelected}
-          onChange={e => {
-            setShippingRefundSelected(e.target.checked);
-            setShippingError(""); // clear error if toggled off
-          }}
-        />
-        <Text>Freight - Max Refundable: ${shippingRefundAmount}</Text>
-      </InlineStack>
+                                        <Card title="Refund Shipping" sectioned>
+                                             {parseFloat(shippingRefundAmount) > 0 ? (
+                                             <InlineGrid columns={['twoThirds', 'oneHalf']} >
 
-      <Text as="span" alignment="end">
-        <Box paddingInlineEnd={400}>
-          <input
-            type="text"
-            disabled={!shippingRefundSelected}
-            value={shippingRefundAmount}
-            onChange={(e) => {
-              const value = e.target.value;
-              const max = parseFloat(shippingRefundAmount || "0");
-              const entered = parseFloat(value || "0");
+                                                  <InlineStack gap={300} blockAlign="center">
+                                                       <input
+                                                            type="checkbox"
+                                                            checked={shippingRefundSelected}
+                                                            onChange={e => setShippingRefundSelected(e.target.checked)}
+                                                       />
+                                                       <Text>Freight - Max Refundable: ${shippingRefundAmount}</Text>
+                                                  </InlineStack>
 
-              if (entered > max) {
-                setShippingError(`❌ You can refund up to $${max.toFixed(2)} only.`);
-              } else {
-                setShippingError("");
-              }
+                                                  <Text as="span" alignment="end">
+                                                       <Box paddingInlineEnd={400}>
+                                                       <input
+                                                            type="text"
+                                                            disabled={!shippingRefundSelected}
+                                                            value={shippingRefundAmount}
+                                                            onChange={e => setShippingRefundAmount(e.target.value)}
+                                                            // style={{ marginLeft: "auto", width: 100, padding: 5 }}
+                                                            style={{ width: "80px", height: '35px', border: '1px solid', borderRadius: '10px', paddingInline: '15px' }}
 
-              setShippingRefundAmount(value);
-            }}
-            style={{
-              width: "80px",
-              height: '35px',
-              border: shippingError ? '1px solid red' : '1px solid',
-              borderRadius: '10px',
-              paddingInline: '15px'
-            }}
-          />
-          {shippingError && (
-            <Text color="critical" size="small">{shippingError}</Text>
-          )}
-        </Box>
-      </Text>
-    </InlineGrid>
-  ) : (
-    <Banner>
-      <p>Shipping has already been fully refunded.</p>
-    </Banner>
-  )}
-</Card>
-
+                                                       />
+                                                       </Box>
+                                                  </Text>
+                                             </InlineGrid>
+                                             ) : (
+                                                  <Banner>
+                                                       <p>Shipping has already been fully refunded.</p>
+                                                  </Banner>
+                                             )}
+                                        </Card>
 
 
                                         <Card title="Reason for Refund" sectioned>
