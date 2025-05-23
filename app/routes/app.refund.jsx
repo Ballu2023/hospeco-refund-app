@@ -241,7 +241,6 @@ export default function RefundPage() {
      const [selectedProducts, setSelectedProducts] = useState([]);
      const [shippingRefundSelected, setShippingRefundSelected] = useState(false);
      const [shippingRefundAmount, setShippingRefundAmount] = useState("0.00");
-     const [shippingError, setShippingError] = useState("");
      const [reasonForRefund, setReasonForRefund] = useState("");
      const [emailCustomer, setEmailCustomer] = useState(true);
      const [refundMeta, setRefundMeta] = useState(null);
@@ -250,7 +249,7 @@ export default function RefundPage() {
      const [loadingHistory, setLoadingHistory] = useState(false);
      const fetcher = useFetcher();
      const totalPages = Math.ceil(total / 25);
-     const prevOrderIdRef = useRef(null);
+const prevOrderIdRef = useRef(null);
 
 useEffect(() => {
   if (selectedOrder?.id !== prevOrderIdRef.current) {
@@ -602,75 +601,60 @@ const refundTotal = productSubtotal + taxAmount + refundedShippingAmount;
                                         </Card>
 
                                         <Card title="Refund Shipping" sectioned>
-  {parseFloat(selectedOrder?.shippingLines?.edges?.[0]?.node?.originalPriceSet?.shopMoney?.amount || "0") > 0 ? (
-    <InlineGrid columns={['twoThirds', 'oneHalf']}>
-      <InlineStack gap={300} blockAlign="center">
-        <input
-          type="checkbox"
-          checked={shippingRefundSelected}
-          onChange={e => {
-            setShippingRefundSelected(e.target.checked);
-            setShippingError("");
-          }}
-        />
-        <Text>
-          Freight - Max Refundable: $
-          {parseFloat(shippingRefundAmount || "0").toFixed(2)}
-        </Text>
-      </InlineStack>
+                                             {parseFloat(shippingRefundAmount) > 0 ? (
+                                             <InlineGrid columns={['twoThirds', 'oneHalf']} >
 
-      <Box paddingInlineEnd={400} display="flex" flexDirection="column">
-        <input
-          type="text"
-          disabled={!shippingRefundSelected}
-          value={shippingRefundAmount}
-          onChange={(e) => {
-            const value = e.target.value;
-            const entered = parseFloat(value || "0");
+                                                  <InlineStack gap={300} blockAlign="center">
+                                                       <input
+                                                            type="checkbox"
+                                                            checked={shippingRefundSelected}
+                                                            onChange={e => setShippingRefundSelected(e.target.checked)}
+                                                       />
+                                                       <Text>Freight - Max Refundable: ${shippingRefundAmount}</Text>
+                                                  </InlineStack>
 
-            const originalShipping = parseFloat(
-              selectedOrder?.shippingLines?.edges?.[0]?.node?.originalPriceSet?.shopMoney?.amount || "0"
-            );
+                                                  <Text as="span" alignment="end">
+                                                       <Box paddingInlineEnd={400}>
+                                                      <input
+  type="text"
+  disabled={!shippingRefundSelected}
+  value={shippingRefundAmount}
+  onChange={(e) => {
+    const value = e.target.value;
+    const entered = parseFloat(value || "0");
 
-            const totalShippingRefunded = refundHistory?.reduce((sum, refund) => {
-              return (
-                sum +
-                (refund.refund_shipping_lines?.reduce((s, r) => {
-                  return s + parseFloat(r.subtotal_amount_set?.shop_money?.amount || 0);
-                }, 0) || 0)
-              );
-            }, 0) || 0;
+    const originalShipping = parseFloat(
+      selectedOrder?.shippingLines?.edges?.[0]?.node?.originalPriceSet?.shopMoney?.amount || "0"
+    );
 
-            const max = Math.max(originalShipping - totalShippingRefunded, 0);
+    let totalShippingRefunded = 0;
+    refundHistory?.forEach(refund => {
+      refund.refund_shipping_lines?.forEach(ship => {
+        totalShippingRefunded += parseFloat(ship.subtotal_amount_set?.shop_money?.amount || 0);
+      });
+    });
 
-            if (entered > max) {
-              setShippingError(`❌ You can refund up to $${max.toFixed(2)} only.`);
-            } else {
-              setShippingError("");
-            }
+    const maxRefundable = Math.max(originalShipping - totalShippingRefunded, 0);
 
-            setShippingRefundAmount(value); // always set entered value
-          }}
-          style={{
-            width: "80px",
-            height: '35px',
-            border: shippingError ? '1px solid red' : '1px solid',
-            borderRadius: '10px',
-            paddingInline: '15px'
-          }}
-        />
-        {shippingError && (
-          <Text color="critical" size="small" paddingBlockStart="100">{shippingError}</Text>
-        )}
-      </Box>
-    </InlineGrid>
-  ) : (
-    <Banner>
-      <p>Shipping has already been fully refunded.</p>
-    </Banner>
-  )}
-</Card>
+    if (entered > maxRefundable) {
+      alert(`❌ Maximum refundable shipping is $${maxRefundable.toFixed(2)}`);
+      return;
+    }
 
+    setShippingRefundAmount(value);
+  }}
+  style={{ width: "80px", height: '35px', border: '1px solid', borderRadius: '10px', paddingInline: '15px' }}
+/>
+
+                                                       </Box>
+                                                  </Text>
+                                             </InlineGrid>
+                                             ) : (
+                                                  <Banner>
+                                                       <p>Shipping has already been fully refunded.</p>
+                                                  </Banner>
+                                             )}
+                                        </Card>
 
 
                                         <Card title="Reason for Refund" sectioned>
