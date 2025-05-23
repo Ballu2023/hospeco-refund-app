@@ -241,6 +241,7 @@ export default function RefundPage() {
      const [selectedProducts, setSelectedProducts] = useState([]);
      const [shippingRefundSelected, setShippingRefundSelected] = useState(false);
      const [shippingRefundAmount, setShippingRefundAmount] = useState("0.00");
+     const [shippingError, setShippingError] = useState(""); // ✅ ADD THIS LINE
      const [reasonForRefund, setReasonForRefund] = useState("");
      const [emailCustomer, setEmailCustomer] = useState(true);
      const [refundMeta, setRefundMeta] = useState(null);
