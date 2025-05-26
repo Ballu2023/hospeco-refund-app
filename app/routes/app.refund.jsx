@@ -801,6 +801,7 @@ function calculateMaxShippingRefund(selectedOrder, refundHistory) {
                                                             {/* {refundMeta
                                                                  ? `Refund $${refundMeta.amount} (TX: ${refundMeta.transaction_id})`
                                                                  : `Refund $${refundTotal.toFixed(2)}`} */}
+                                                                  <Text fontWeight="bold">Refund</Text>
                                                                        <Text fontWeight="bold">${refundTotal.toFixed(2)}</Text>
 
                                                        </Button>
