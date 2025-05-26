@@ -261,7 +261,7 @@ useEffect(() => {
     );
     setReasonForRefund("");
     setEmailCustomer(true);
-    setRefundMeta(null);
+//     setRefundMeta(null);
   }
 }, [selectedOrder]);
 
