@@ -5,169 +5,173 @@ import { useDebounce } from 'use-debounce';
 
 
 export const loader = async ({ request }) => {
-     const { admin } = await authenticate.admin(request);
-     const url = new URL(request.url);
-     const search = url.searchParams.get("search")?.toLowerCase().trim() || "";
-     const page = parseInt(url.searchParams.get("page")) || 1;
-     const selectedOrderId = url.searchParams.get("orderId") || null;
+  const { admin } = await authenticate.admin(request);
+  const url = new URL(request.url);
+  const search = url.searchParams.get("search")?.toLowerCase().trim() || "";
+  const page = parseInt(url.searchParams.get("page")) || 1;
+  const selectedOrderId = url.searchParams.get("orderId") || null;
 
-     const PAGE_SIZE = 10;
-     let hasNextPage = true;
-     let afterCursor = null;
-     const allOrders = [];
+  const PAGE_SIZE = 10;
+  let afterCursor = null;
 
-     while (hasNextPage && allOrders.length < 100) {
-          const query = `
-      query GetOrders($first: Int!, $after: String) {
-        orders(first: $first, after: $after, reverse: true) {
-          pageInfo { hasNextPage }
+  // ⚡ If we're on page > 1, we need to get the cursor for that page.
+  if (page > 1) {
+    const skipCount = (page - 1) * PAGE_SIZE;
+    const cursorQuery = `
+      query GetCursors {
+        orders(first: ${skipCount}, reverse: true) {
           edges {
             cursor
-            node {
-              id name email createdAt sourceName displayFinancialStatus
-              totalPriceSet { shopMoney { amount currencyCode } }
-              totalTaxSet { shopMoney { amount } }
-              customer {
-                firstName
-                lastName
-                email
-              }
-              shippingLines(first: 1) {
-                edges {
-                  node {
-                    title
-                    originalPriceSet { shopMoney { amount currencyCode } }
-                    taxLines { price rate title }
-                  }
-                }
-              }
-              lineItems(first: 20) {
-                edges {
-                  node {
-                    id title quantity sku
-                    image { originalSrc altText }
-                    discountedUnitPriceSet { shopMoney { amount currencyCode } }
-                    taxLines { price rate title }
-                  }
-                }
-              }
-              metafields(first: 10, namespace: "custom") {
-                edges {
-                  node {
-                    key value
-                  }
-                }
-              }
-            }
           }
         }
       }
     `;
+    const cursorResponse = await admin.graphql(cursorQuery);
+    const cursorData = await cursorResponse.json();
+    const edges = cursorData.data.orders.edges;
+    afterCursor = edges.length > 0 ? edges[edges.length - 1].cursor : null;
+  }
 
-          const response = await admin.graphql(query, { variables: { first: 250, after: afterCursor } });
-          const data = await response.json();
-
-          if (!data?.data) {
-               console.error("❌ GraphQL Error:", JSON.stringify(data, null, 2));
-               throw new Error("Failed to fetch orders");
+  const query = `
+    query GetOrders($first: Int!, $after: String) {
+      orders(first: $first, after: $after, reverse: true) {
+        pageInfo { hasNextPage }
+        edges {
+          cursor
+          node {
+            id name email createdAt sourceName displayFinancialStatus
+            totalPriceSet { shopMoney { amount currencyCode } }
+            totalTaxSet { shopMoney { amount } }
+            customer { firstName lastName email }
+            shippingLines(first: 1) {
+              edges {
+                node {
+                  title
+                  originalPriceSet { shopMoney { amount currencyCode } }
+                  taxLines { price rate title }
+                }
+              }
+            }
+            lineItems(first: 20) {
+              edges {
+                node {
+                  id title quantity sku
+                  image { originalSrc altText }
+                  discountedUnitPriceSet { shopMoney { amount currencyCode } }
+                  taxLines { price rate title }
+                }
+              }
+            }
+            metafields(first: 10, namespace: "custom") {
+              edges { node { key value } }
+            }
           }
+        }
+      }
+    }
+  `;
 
-          const orders = data.data.orders.edges;
+  const response = await admin.graphql(query, { variables: { first: PAGE_SIZE, after: afterCursor } });
+  const data = await response.json();
 
-          for (const { node, cursor } of orders) {
-               if (node?.sourceName !== "web") {
-                    const orderIdNum = node?.id.split("/").pop();
-                    let transactionId = null, gateway = "manual", locationId = 70116966605;
+  if (!data?.data) {
+    console.error("❌ GraphQL Error:", JSON.stringify(data, null, 2));
+    throw new Error("Failed to fetch orders");
+  }
 
-                    try {
-                         const txResp = await admin.rest?.get({ path: `/admin/api/2023-10/orders/${orderIdNum}/transactions.json` });
-                         const tx = txResp?.body?.transactions?.[0];
-                         if (tx) {
-                              transactionId = tx.id;
-                              gateway = tx.gateway || "manual";
-                              locationId = tx.location_id || locationId;
-                         }
-                    } catch (e) {
-                         console.warn("Transaction fetch failed:", e);
-                    }
+  const orders = await Promise.all(
+    data.data.orders.edges
+      .filter(({ node }) => node?.sourceName !== "web")
+      .map(async ({ node, cursor }) => {
+        const orderIdNum = node.id.split("/").pop();
+        let transactionId = null;
+        let gateway = "manual";
+        let locationId = 70116966605;
 
-                    const metafields = {};
-                    node.metafields.edges.forEach(({ node }) => {
-                         metafields[node.key] = node.value;
-                    });
-
-                    let lineItems = node.lineItems.edges.map(({ node }) => node);
-
-                    const selectedOrderNum = selectedOrderId?.split("/").pop();
-                    if (selectedOrderNum === orderIdNum) {
-                         try {
-                              const refundRes = await fetch(`https://phpstack-1419716-5486887.cloudwaysapps.com/refunds/${orderIdNum}`);
-                              const refundJson = await refundRes.json();
-
-                              const refundedMap = {};
-                              refundJson.refunds?.forEach(refund => {
-                                   refund.refund_line_items.forEach(refItem => {
-                                        const plainId = refItem.line_item_id?.toString();
-                                        if (plainId) {
-                                             refundedMap[plainId] = (refundedMap[plainId] || 0) + refItem.quantity;
-                                        }
-                                   });
-                              });
-
-                             lineItems = lineItems
-  .map(item => {
-    const itemIdPlain = item.id.split("/").pop();
-    const refundedQty = refundedMap[itemIdPlain] || 0;
-    const remainingQty = item.quantity - refundedQty;
-    if (remainingQty <= 0) return null;
-    return {
-      ...item,
-      quantity: remainingQty,
-      originalQuantityRefunded: refundedQty, // ✅ store for tax fix
-    };
-  })
-  .filter(Boolean);
-
-                         } catch (err) {
-                              console.error("❌ Failed to fetch refund data:", err);
-                         }
-                    }
-
-                    const customerName = `${node.customer?.firstName || ""} ${node.customer?.lastName || ""}`.trim();
-                    const customerEmail = node.customer?.email || node.email;
-
-                    allOrders.push({
-                         ...node,
-                         cursor,
-                         lineItems,
-                         orderId: orderIdNum,
-                         transactionId,
-                         gateway,
-                         locationId,
-                         metafields,
-                         customerName,
-                         customerEmail
-                    });
-               }
+        try {
+          const txResp = await admin.rest?.get({
+            path: `/admin/api/2023-10/orders/${orderIdNum}/transactions.json`,
+          });
+          const tx = txResp?.body?.transactions?.[0];
+          if (tx) {
+            transactionId = tx.id;
+            gateway = tx.gateway || "manual";
+            locationId = tx.location_id || locationId;
           }
+        } catch (e) {
+          console.warn("Transaction fetch failed:", e);
+        }
 
-          hasNextPage = data.data.orders.pageInfo.hasNextPage;
-          afterCursor = hasNextPage ? orders[orders.length - 1].cursor : null;
-     }
+        const metafields = {};
+        node.metafields.edges.forEach(({ node: mf }) => {
+          metafields[mf.key] = mf.value;
+        });
 
-     const filteredOrders = allOrders.filter(order => {
-          const cleanSearch = search.replace("#", "");
-          return (
-               order.name.toLowerCase().replace("#", "").includes(cleanSearch) ||
-               order.customerEmail.toLowerCase().includes(cleanSearch)
-          );
-     });
+        let lineItems = node.lineItems.edges.map(({ node }) => node);
 
-     const paginatedOrders = filteredOrders.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-     const selectedOrder = selectedOrderId ? allOrders.find(o => o.id === selectedOrderId) : null;
+        const selectedOrderNum = selectedOrderId?.split("/").pop();
+        if (selectedOrderNum === orderIdNum) {
+          try {
+            const refundRes = await fetch(`https://phpstack-1419716-5486887.cloudwaysapps.com/refunds/${orderIdNum}`);
+            const refundJson = await refundRes.json();
+            const refundedMap = {};
+            refundJson.refunds?.forEach(refund => {
+              refund.refund_line_items.forEach(refItem => {
+                const plainId = refItem.line_item_id?.toString();
+                if (plainId) {
+                  refundedMap[plainId] = (refundedMap[plainId] || 0) + refItem.quantity;
+                }
+              });
+            });
+            lineItems = lineItems
+              .map(item => {
+                const itemIdPlain = item.id.split("/").pop();
+                const refundedQty = refundedMap[itemIdPlain] || 0;
+                const remainingQty = item.quantity - refundedQty;
+                if (remainingQty <= 0) return null;
+                return { ...item, quantity: remainingQty, originalQuantityRefunded: refundedQty };
+              })
+              .filter(Boolean);
+          } catch (err) {
+            console.error("❌ Failed to fetch refund data:", err);
+          }
+        }
 
-     return json({ orders: paginatedOrders, total: filteredOrders.length, page, selectedOrder });
+        const customerName = `${node.customer?.firstName || ""} ${node.customer?.lastName || ""}`.trim();
+        const customerEmail = node.customer?.email || node.email;
+
+        return {
+          ...node,
+          cursor,
+          lineItems,
+          orderId: orderIdNum,
+          transactionId,
+          gateway,
+          locationId,
+          metafields,
+          customerName,
+          customerEmail,
+        };
+      })
+  );
+
+  const filteredOrders = search
+    ? orders.filter(order =>
+        order.name.toLowerCase().replace("#", "").includes(search.replace("#", "")) ||
+        order.customerEmail.toLowerCase().includes(search)
+      )
+    : orders;
+
+  const selectedOrder = selectedOrderId ? orders.find(o => o.id === selectedOrderId) : null;
+
+  return json({
+    orders: filteredOrders,
+    total: data.data.orders.pageInfo.hasNextPage ? page * PAGE_SIZE + 1 : page * PAGE_SIZE,
+    page,
+    selectedOrder,
+  });
 };
+
 
 export const action = async ({ request }) => {
      try {
