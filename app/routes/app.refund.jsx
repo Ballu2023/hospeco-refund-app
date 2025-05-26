@@ -250,6 +250,8 @@ export default function RefundPage() {
      const fetcher = useFetcher();
      const totalPages = Math.ceil(total / 25);
 const prevOrderIdRef = useRef(null);
+     const [shippingAmountManuallyChanged, setShippingAmountManuallyChanged] = useState(false);
+
 
 useEffect(() => {
   if (selectedOrder?.id !== prevOrderIdRef.current) {
@@ -262,8 +264,10 @@ useEffect(() => {
     setReasonForRefund("");
     setEmailCustomer(true);
     setRefundMeta(null);
+    setShippingAmountManuallyChanged(false); // ✅ Reset manual flag
   }
 }, [selectedOrder]);
+
 
 
      useEffect(() => {
@@ -298,7 +302,7 @@ useEffect(() => {
      // 🆕 Add this useEffect to compute remaining shipping dynamically
     // After your last existing useEffect...
 useEffect(() => {
-  if (!selectedOrder || !refundHistory) return;
+  if (!selectedOrder || !refundHistory || shippingAmountManuallyChanged) return;
 
   let totalShippingRefunded = 0;
   refundHistory.forEach(refund => {
@@ -313,7 +317,8 @@ useEffect(() => {
 
   const remainingShipping = Math.max(originalShipping - totalShippingRefunded, 0).toFixed(2);
   setShippingRefundAmount(remainingShipping);
-}, [refundHistory, selectedOrder]);
+}, [refundHistory, selectedOrder, shippingAmountManuallyChanged]);
+
 
 // ✅ Add this NEW useEffect here:
 useEffect(() => {
@@ -633,25 +638,29 @@ function calculateMaxShippingRefund(selectedOrder, refundHistory) {
   type="text"
   disabled={!shippingRefundSelected}
   value={shippingRefundAmount}
-  onChange={(e) => {
-    const value = e.target.value;
-    const entered = parseFloat(value || "0");
+onChange={(e) => {
+  const value = e.target.value;
+  const entered = parseFloat(value || "0");
 
-    const maxRefundable = parseFloat(calculateMaxShippingRefund(selectedOrder, refundHistory));
+  const maxRefundable = parseFloat(calculateMaxShippingRefund(selectedOrder, refundHistory));
 
-    if (isNaN(entered) || entered === 0 || value === "") {
-      // Reset to original max value
-      setShippingRefundAmount(maxRefundable);
-      return;
-    }
+  if (isNaN(entered) || entered === 0 || value === "") {
+    setShippingRefundAmount(maxRefundable);
+    setShippingAmountManuallyChanged(false); // ⚠️ Reset if they clear it
+    return;
+  }
 
-    if (entered > maxRefundable) {
-      alert(`❌ Maximum refundable shipping is $${maxRefundable.toFixed(2)}`);
-      setShippingRefundAmount(maxRefundable); // auto-correct back
-      return;
-    }
+  if (entered > maxRefundable) {
+    alert(`❌ Maximum refundable shipping is $${maxRefundable.toFixed(2)}`);
+    setShippingRefundAmount(maxRefundable);
+    setShippingAmountManuallyChanged(false); // ⚠️ Reset to auto value
+    return;
+  }
 
-    setShippingRefundAmount(value);
+  setShippingRefundAmount(value);
+  setShippingAmountManuallyChanged(true); // ✅ User manually entered
+
+
   }}
   style={{
     width: "80px",
