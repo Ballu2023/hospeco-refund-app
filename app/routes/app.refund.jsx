@@ -798,12 +798,9 @@ function calculateMaxShippingRefund(selectedOrder, refundHistory) {
                                                   </Box>
                                                   <Box paddingBlockStart="300">
                                                        <Button fullWidth variant="primary" onClick={handleRefund} disabled={!refundMeta || selectedProducts.length === 0}>
-                                                            {/* {refundMeta
+                                                            {refundMeta
                                                                  ? `Refund $${refundMeta.amount} (TX: ${refundMeta.transaction_id})`
-                                                                 : `Refund $${refundTotal.toFixed(2)}`} */}
-                                                                  <Text fontWeight="bold">Refund</Text>
-                                                                       <Text fontWeight="bold">${refundTotal.toFixed(2)}</Text>
-
+                                                                 : `Refund $${refundTotal.toFixed(2)}`}
                                                        </Button>
                                                   </Box>
                                              </BlockStack>
