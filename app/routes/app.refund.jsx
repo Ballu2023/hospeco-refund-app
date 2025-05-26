@@ -337,6 +337,10 @@ useEffect(() => {
 }, [selectedProducts, shippingRefundAmount]);
 
 
+useEffect(() => {
+  const params = new URLSearchParams(searchParams);
+  fetcher.load(`/app/refund?${params.toString()}`);
+}, [searchParams]);
 
      const updatePage = (newPage) => {
           const params = new URLSearchParams(searchParams);
