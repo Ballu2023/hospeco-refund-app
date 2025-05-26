@@ -1,6 +1,8 @@
 // ✅ app/routes/app.refund.jsx — LOADER and ACTION
 import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
+import { useDebounce } from 'use-debounce';
+
 
 export const loader = async ({ request }) => {
      const { admin } = await authenticate.admin(request);
@@ -245,6 +247,7 @@ export default function RefundPage() {
      const [emailCustomer, setEmailCustomer] = useState(true);
      const [refundMeta, setRefundMeta] = useState(null);
      const [filter, setFilter] = useState("");
+     const [debouncedFilter] = useDebounce(filter, 300); // ⚡️ Add debounce of 300ms
      const [refundHistory, setRefundHistory] = useState(null);
      const [loadingHistory, setLoadingHistory] = useState(false);
      const fetcher = useFetcher();
@@ -254,6 +257,12 @@ export default function RefundPage() {
      const data = fetcher.data || { orders, total, page, selectedOrder };
 
 
+     useEffect(() => {
+  const params = new URLSearchParams(searchParams);
+  params.set("search", debouncedFilter);
+  params.set("page", 1);
+  fetcher.load(`/app/refund?${params.toString()}`);
+}, [debouncedFilter]);
 
 useEffect(() => {
   if (selectedOrder?.id !== prevOrderIdRef.current) {
@@ -830,22 +839,17 @@ onChange={(e) => {
                     <Layout.Section>
                          <Card>
                               <Box paddingBlockEnd="300">
-                                   <TextField
+                                  <TextField
   label="Search orders by number or email"
   value={filter}
-  onChange={(val) => {
-    setFilter(val);
-    const params = new URLSearchParams(searchParams);
-    params.set("search", val);
-    params.set("page", 1);
-    fetcher.load(`/app/refund?${params.toString()}`);
-  }}
+  onChange={setFilter} // 🚀 only update state!
   autoComplete="off"
   placeholder="Search #5521, email etc"
 />
 
+
                               </Box>
-                            <IndexTable
+                          <IndexTable
   resourceName={{ singular: "order", plural: "orders" }}
   itemCount={data.orders.length}
   selectedItemsCount={0}
@@ -881,7 +885,7 @@ onChange={(e) => {
 
 
                               <Box padding="300" display="flex" justifyContent="end">
-                                  <Pagination
+                                 <Pagination
   hasPrevious={data.page > 1}
   hasNext={data.page < Math.ceil(data.total / 25)}
   onPrevious={() => updatePage(data.page - 1)}
