@@ -11,7 +11,7 @@ export const loader = async ({ request }) => {
      const page = parseInt(url.searchParams.get("page")) || 1;
      const selectedOrderId = url.searchParams.get("orderId") || null;
 
-     const PAGE_SIZE = 25;
+     const PAGE_SIZE = 10;
      let hasNextPage = true;
      let afterCursor = null;
      const allOrders = [];
@@ -884,15 +884,22 @@ onChange={(e) => {
 
 
 
-                              <Box padding="300" display="flex" justifyContent="end">
-                                 <Pagination
-  hasPrevious={data.page > 1}
-  hasNext={data.page < Math.ceil(data.total / 25)}
-  onPrevious={() => updatePage(data.page - 1)}
-  onNext={() => updatePage(data.page + 1)}
-/>
+                             <Box padding="300" display="flex" justifyContent="center">
+  {[...Array(Math.ceil(data.total / 10)).keys()].map(pageNum => {
+    const pageIndex = pageNum + 1;
+    return (
+      <Button
+        key={pageIndex}
+        variant={pageIndex === data.page ? "primary" : "secondary"}
+        onClick={() => updatePage(pageIndex)}
+        style={{ margin: "0 5px" }}
+      >
+        {pageIndex}
+      </Button>
+    );
+  })}
+</Box>
 
-                              </Box>
                          </Card>
                     </Layout.Section>
                )}
