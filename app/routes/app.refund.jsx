@@ -889,20 +889,35 @@ onChange={(e) => {
 
 
                              <Box padding="300" display="flex" justifyContent="center">
-  {[...Array(Math.ceil(data.total / 10)).keys()].map(pageNum => {
-    const pageIndex = pageNum + 1;
-    return (
+  {(() => {
+    const totalPages = Math.ceil(data.total / 10);
+    const currentPage = data.page;
+    const windowSize = 3; // 👈 Show 3 pages: prev, current, next
+    let startPage = Math.max(currentPage - 1, 1);
+    let endPage = Math.min(currentPage + 1, totalPages);
+
+    // Always show at least 3 if possible
+    if (currentPage === 1) endPage = Math.min(3, totalPages);
+    if (currentPage === totalPages) startPage = Math.max(totalPages - 2, 1);
+
+    const pageNumbers = [];
+    for (let i = startPage; i <= endPage; i++) {
+      pageNumbers.push(i);
+    }
+
+    return pageNumbers.map(pageIndex => (
       <Button
         key={pageIndex}
-        variant={pageIndex === data.page ? "primary" : "secondary"}
+        variant={pageIndex === currentPage ? "primary" : "secondary"}
         onClick={() => updatePage(pageIndex)}
         style={{ margin: "0 5px" }}
       >
         {pageIndex}
       </Button>
-    );
-  })}
+    ));
+  })()}
 </Box>
+
 
                          </Card>
                     </Layout.Section>
