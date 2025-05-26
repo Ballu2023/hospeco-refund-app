@@ -335,15 +335,12 @@ useEffect(() => {
           setSearchParams(params);
      };
 
-  // ✅ Parse total tax on the order
 const fullOrderTax = parseFloat(selectedOrder?.totalTaxSet?.shopMoney?.amount || "0");
 
-// ✅ New: refunded shipping amount (user input)
 const refundedShippingAmount = shippingRefundSelected
   ? parseFloat(shippingRefundAmount || "0")
   : 0;
 
-// ✅ New: full original shipping & shipping tax
 const fullShippingAmount = parseFloat(
   selectedOrder?.shippingLines?.edges?.[0]?.node?.originalPriceSet?.shopMoney?.amount || "0"
 );
@@ -351,24 +348,20 @@ const fullShippingTax = parseFloat(
   selectedOrder?.shippingLines?.edges?.[0]?.node?.taxLines?.[0]?.price || "0"
 );
 
-// ✅ Correct shipping tax calculation (only for refunded portion)
 const shippingTax = shippingRefundSelected && fullShippingAmount > 0
   ? (fullShippingTax * (refundedShippingAmount / fullShippingAmount))
   : 0;
 
-// ✅ Full product subtotal from the order
 const fullSubtotal = selectedOrder?.lineItems?.reduce(
   (sum, item) =>
     sum + parseFloat(item.discountedUnitPriceSet?.shopMoney?.amount || "0") * item.quantity,
   0
 );
 
-// ✅ Selected product subtotal for refund
 const productSubtotal = selectedProducts.reduce(
   (sum, item) => sum + (parseFloat(item.price) * item.quantity), 0
 );
 
-// ✅ Calculate proportional product tax only
 const productTax = selectedProducts.reduce((totalTax, selected) => {
   const originalItem = selectedOrder?.lineItems?.find(item => item.id === selected.id);
   if (!originalItem || !originalItem.taxLines?.length) return totalTax;
@@ -384,7 +377,6 @@ const productTax = selectedProducts.reduce((totalTax, selected) => {
 
 
 
-// ✅ Final tax and total refund calculation
 const taxAmount = productTax + shippingTax;
 const refundTotal = productSubtotal + taxAmount + refundedShippingAmount;
 
@@ -806,9 +798,11 @@ function calculateMaxShippingRefund(selectedOrder, refundHistory) {
                                                   </Box>
                                                   <Box paddingBlockStart="300">
                                                        <Button fullWidth variant="primary" onClick={handleRefund} disabled={!refundMeta || selectedProducts.length === 0}>
-                                                            {refundMeta
+                                                            {/* {refundMeta
                                                                  ? `Refund $${refundMeta.amount} (TX: ${refundMeta.transaction_id})`
-                                                                 : `Refund $${refundTotal.toFixed(2)}`}
+                                                                 : `Refund $${refundTotal.toFixed(2)}`} */}
+                                                                       <Text fontWeight="bold">${refundTotal.toFixed(2)}</Text>
+
                                                        </Button>
                                                   </Box>
                                              </BlockStack>
