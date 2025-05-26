@@ -296,25 +296,30 @@ useEffect(() => {
 
 
      // 🆕 Add this useEffect to compute remaining shipping dynamically
-     useEffect(() => {
-          if (!selectedOrder || !refundHistory) return;
+    // After your last existing useEffect...
+useEffect(() => {
+  if (!selectedOrder || !refundHistory) return;
 
-          let totalShippingRefunded = 0;
+  let totalShippingRefunded = 0;
+  refundHistory.forEach(refund => {
+    refund.refund_shipping_lines?.forEach(ship => {
+      totalShippingRefunded += parseFloat(ship.subtotal_amount_set?.shop_money?.amount || 0);
+    });
+  });
 
-          refundHistory.forEach(refund => {
-               refund.refund_shipping_lines?.forEach(ship => {
-                    const refundedAmount = parseFloat(ship.subtotal_amount_set?.shop_money?.amount || 0);
-                    totalShippingRefunded += refundedAmount;
-               });
-          });
+  const originalShipping = parseFloat(
+    selectedOrder?.shippingLines?.edges?.[0]?.node?.originalPriceSet?.shopMoney?.amount || "0"
+  );
 
-          const originalShipping = parseFloat(
-               selectedOrder?.shippingLines?.edges?.[0]?.node?.originalPriceSet?.shopMoney?.amount || "0"
-          );
+  const remainingShipping = Math.max(originalShipping - totalShippingRefunded, 0).toFixed(2);
+  setShippingRefundAmount(remainingShipping);
+}, [refundHistory, selectedOrder]);
 
-          const remainingShipping = Math.max(originalShipping - totalShippingRefunded, 0).toFixed(2);
-          setShippingRefundAmount(remainingShipping);
-     }, [refundHistory, selectedOrder]);
+// ✅ Add this NEW useEffect here:
+useEffect(() => {
+  setRefundMeta(null); // reset refund meta every time these change
+}, [selectedProducts, shippingRefundAmount]);
+
 
 
      const updatePage = (newPage) => {
