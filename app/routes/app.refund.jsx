@@ -620,7 +620,7 @@ function calculateMaxShippingRefund(selectedOrder, refundHistory) {
                                         </Card>
 
                                         <Card title="Refund Shipping" sectioned>
-                                             <Text>Refund Shipping</Text>
+                                              <Text variant="headingMd">Refund Shipping</Text>
                                              {parseFloat(shippingRefundAmount) > 0 ? (
                                              <InlineGrid columns={['twoThirds', 'oneHalf']} >
 
