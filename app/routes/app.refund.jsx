@@ -577,12 +577,12 @@ function calculateMaxShippingRefund(selectedOrder, refundHistory) {
                                                                  </Text>
 
                                       <div style={{ display: "flex", flexDirection: "column" }}>
-  <input
-    type="number"
-    min="0"
-    max={item.quantity}
-    value={selectedQuantity}
-    onChange={(e) => {
+                              <input
+                                    type="number"
+                                   min="0"
+                                   max={item.quantity}
+                                   value={selectedQuantity}
+                                   onChange={(e) => {
       const qty = parseInt(e.target.value) || 0;
       if (qty > item.quantity) {
         alert(`❌ You cannot refund more than ${item.quantity} item(s).`);
@@ -813,7 +813,7 @@ onChange={(e) => {
                                                   <Box paddingBlockStart="300">
                                                        <Button fullWidth variant="primary" onClick={handleRefund} disabled={!refundMeta || selectedProducts.length === 0}>
                                                             {refundMeta
-                                                                 ? `Refund $${refundMeta.amount} (TX: ${refundMeta.transaction_id})`
+                                                                 ? `Refund $${refundMeta.amount}`
                                                                  : `Refund $${refundTotal.toFixed(2)}`}
                                                        </Button>
                                                   </Box>
