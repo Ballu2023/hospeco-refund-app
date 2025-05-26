@@ -295,26 +295,43 @@ useEffect(() => {
      }, [selectedOrder]);
 
 
-     // 🆕 Add this useEffect to compute remaining shipping dynamically
-     useEffect(() => {
-          if (!selectedOrder || !refundHistory) return;
+     // ✅ Existing: update refundMeta after Calculate Refund API call
+useEffect(() => {
+  if (fetcher.data?.transactionId && fetcher.data?.amount) {
+    setRefundMeta({
+      transaction_id: fetcher.data.transactionId,
+      amount: fetcher.data.amount
+    });
+  }
+}, [fetcher.data]);
 
-          let totalShippingRefunded = 0;
+// ✅ Existing: update shipping refund amount after refund history fetched
+useEffect(() => {
+  if (!selectedOrder || !refundHistory) return;
 
-          refundHistory.forEach(refund => {
-               refund.refund_shipping_lines?.forEach(ship => {
-                    const refundedAmount = parseFloat(ship.subtotal_amount_set?.shop_money?.amount || 0);
-                    totalShippingRefunded += refundedAmount;
-               });
-          });
+  let totalShippingRefunded = 0;
+  refundHistory.forEach(refund => {
+    refund.refund_shipping_lines?.forEach(ship => {
+      const refundedAmount = parseFloat(ship.subtotal_amount_set?.shop_money?.amount || 0);
+      totalShippingRefunded += refundedAmount;
+    });
+  });
 
-          const originalShipping = parseFloat(
-               selectedOrder?.shippingLines?.edges?.[0]?.node?.originalPriceSet?.shopMoney?.amount || "0"
-          );
+  const originalShipping = parseFloat(
+    selectedOrder?.shippingLines?.edges?.[0]?.node?.originalPriceSet?.shopMoney?.amount || "0"
+  );
 
-          const remainingShipping = Math.max(originalShipping - totalShippingRefunded, 0).toFixed(2);
-          setShippingRefundAmount(remainingShipping);
-     }, [refundHistory, selectedOrder]);
+  const remainingShipping = Math.max(originalShipping - totalShippingRefunded, 0).toFixed(2);
+  setShippingRefundAmount(remainingShipping);
+}, [refundHistory, selectedOrder]);
+
+// ✅ NEW: Clear refundMeta if refund inputs change
+useEffect(() => {
+  if (refundMeta) {
+    setRefundMeta(null);
+  }
+}, [selectedProducts, shippingRefundSelected, shippingRefundAmount]);
+
 
 
      const updatePage = (newPage) => {
