@@ -249,7 +249,9 @@ export default function RefundPage() {
      const [loadingHistory, setLoadingHistory] = useState(false);
      const fetcher = useFetcher();
      const totalPages = Math.ceil(total / 25);
-const prevOrderIdRef = useRef(null);
+     const prevOrderIdRef = useRef(null);
+     const [shippingRefundAmountManuallyChanged, setShippingRefundAmountManuallyChanged] = useState(false);
+
 
 useEffect(() => {
   if (selectedOrder?.id !== prevOrderIdRef.current) {
@@ -308,26 +310,26 @@ useEffect(() => {
 // ✅ Existing: update shipping refund amount after refund history fetched
 useEffect(() => {
   if (!selectedOrder || !refundHistory) return;
-
-  let totalShippingRefunded = 0;
-  refundHistory.forEach(refund => {
-    refund.refund_shipping_lines?.forEach(ship => {
-      const refundedAmount = parseFloat(ship.subtotal_amount_set?.shop_money?.amount || 0);
-      totalShippingRefunded += refundedAmount;
+  if (!shippingRefundAmountManuallyChanged) {
+    let totalShippingRefunded = 0;
+    refundHistory.forEach(refund => {
+      refund.refund_shipping_lines?.forEach(ship => {
+        totalShippingRefunded += parseFloat(ship.subtotal_amount_set?.shop_money?.amount || 0);
+      });
     });
-  });
-
-  const originalShipping = parseFloat(
-    selectedOrder?.shippingLines?.edges?.[0]?.node?.originalPriceSet?.shopMoney?.amount || "0"
-  );
-
-  const remainingShipping = Math.max(originalShipping - totalShippingRefunded, 0).toFixed(2);
-  setShippingRefundAmount(remainingShipping);
+    const originalShipping = parseFloat(
+      selectedOrder?.shippingLines?.edges?.[0]?.node?.originalPriceSet?.shopMoney?.amount || "0"
+    );
+    const remainingShipping = Math.max(originalShipping - totalShippingRefunded, 0).toFixed(2);
+    setShippingRefundAmount(remainingShipping);
+  }
 }, [refundHistory, selectedOrder]);
+
 
 // ✅ NEW: Clear refundMeta if refund inputs change
 useEffect(() => {
   if (refundMeta) {
+         console.log("🚨 refundMeta reset triggered by change");
     setRefundMeta(null);
   }
 }, [selectedProducts, shippingRefundSelected, shippingRefundAmount]);
@@ -422,10 +424,12 @@ const refundTotal = productSubtotal + taxAmount + refundedShippingAmount;
      });
 
      const handleCalculateRefund = () => {
-          const formData = new FormData();
-          formData.append("body", JSON.stringify({ ...preparePayload(), mode: "calculate" }));
-          fetcher.submit(formData, { method: "POST" });
-     };
+  setShippingRefundAmountManuallyChanged(false); // ✅ reset after recalc
+  const formData = new FormData();
+  formData.append("body", JSON.stringify({ ...preparePayload(), mode: "calculate" }));
+  fetcher.submit(formData, { method: "POST" });
+};
+
 
      const handleRefund = async () => {
           if (selectedProducts.length === 0 || !refundMeta) return;
@@ -645,25 +649,22 @@ function calculateMaxShippingRefund(selectedOrder, refundHistory) {
   type="text"
   disabled={!shippingRefundSelected}
   value={shippingRefundAmount}
-  onChange={(e) => {
-    const value = e.target.value;
-    const entered = parseFloat(value || "0");
+ onChange={(e) => {
+  setShippingRefundAmountManuallyChanged(true); // ✅ mark as manually changed
+  const value = e.target.value;
+  const entered = parseFloat(value || "0");
+  const maxRefundable = parseFloat(calculateMaxShippingRefund(selectedOrder, refundHistory));
+  if (isNaN(entered) || entered === 0 || value === "") {
+    setShippingRefundAmount(maxRefundable);
+    return;
+  }
+  if (entered > maxRefundable) {
+    alert(`❌ Maximum refundable shipping is $${maxRefundable.toFixed(2)}`);
+    setShippingRefundAmount(maxRefundable);
+    return;
+  }
+  setShippingRefundAmount(value);
 
-    const maxRefundable = parseFloat(calculateMaxShippingRefund(selectedOrder, refundHistory));
-
-    if (isNaN(entered) || entered === 0 || value === "") {
-      // Reset to original max value
-      setShippingRefundAmount(maxRefundable);
-      return;
-    }
-
-    if (entered > maxRefundable) {
-      alert(`❌ Maximum refundable shipping is $${maxRefundable.toFixed(2)}`);
-      setShippingRefundAmount(maxRefundable); // auto-correct back
-      return;
-    }
-
-    setShippingRefundAmount(value);
   }}
   style={{
     width: "80px",
