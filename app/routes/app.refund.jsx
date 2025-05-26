@@ -249,8 +249,10 @@ export default function RefundPage() {
      const [loadingHistory, setLoadingHistory] = useState(false);
      const fetcher = useFetcher();
      const totalPages = Math.ceil(total / 25);
-const prevOrderIdRef = useRef(null);
+     const prevOrderIdRef = useRef(null);
      const [shippingAmountManuallyChanged, setShippingAmountManuallyChanged] = useState(false);
+     const data = fetcher.data || { orders, total, page, selectedOrder };
+
 
 
 useEffect(() => {
@@ -829,57 +831,63 @@ onChange={(e) => {
                          <Card>
                               <Box paddingBlockEnd="300">
                                    <TextField
-                                        label="Search orders by number or email"
-                                        value={filter}
-                                        onChange={(val) => {
-                                             setFilter(val);
-                                             setSearchParams({ search: val, page: 1 });
-                                        }}
-                                        autoComplete="off"
-                                        placeholder="Search #5521, email etc"
-                                   />
+  label="Search orders by number or email"
+  value={filter}
+  onChange={(val) => {
+    setFilter(val);
+    const params = new URLSearchParams(searchParams);
+    params.set("search", val);
+    params.set("page", 1);
+    fetcher.load(`/app/refund?${params.toString()}`);
+  }}
+  autoComplete="off"
+  placeholder="Search #5521, email etc"
+/>
+
                               </Box>
-                              <IndexTable
-                                   resourceName={{ singular: "order", plural: "orders" }}
-                                   itemCount={orders.length}
-                                   selectedItemsCount={0}
-                                   headings={[
-                                        { title: "Order" },
-                                        { title: "Order ID" },
-                                        { title: "Customer" }, //  Added
-                                        { title: "Email" },
-                                        { title: "Date" },
-                                        { title: "Total" },
-                                        { title: "Payment Status" }
-                                   ]}
-                              >
-                                   {orders.map((order, index) => (
-                                        <IndexTable.Row id={order.id} key={order.id} position={index}>
-                                             <IndexTable.Cell>
-                                                  <Button variant="plain" onClick={() => showOrder(order.id)}>
-                                                       {order.name}
-                                                  </Button>
-                                             </IndexTable.Cell>
-                                             <IndexTable.Cell>{order.orderId}</IndexTable.Cell>
-                                             <IndexTable.Cell>{order.customerName || "N/A"}</IndexTable.Cell>
-                                             <IndexTable.Cell>{order.customerEmail}</IndexTable.Cell>
-                                             <IndexTable.Cell>{formatDate(order.createdAt)}</IndexTable.Cell>
-                                             <IndexTable.Cell>
-                                                  {order.totalPriceSet.shopMoney.amount} {order.totalPriceSet.shopMoney.currencyCode}
-                                             </IndexTable.Cell>
-                                             <IndexTable.Cell>{order.displayFinancialStatus || "Unknown"}</IndexTable.Cell>
-                                        </IndexTable.Row>
-                                   ))}
-                              </IndexTable>
+                            <IndexTable
+  resourceName={{ singular: "order", plural: "orders" }}
+  itemCount={data.orders.length}
+  selectedItemsCount={0}
+  headings={[
+    { title: "Order" },
+    { title: "Order ID" },
+    { title: "Customer" },
+    { title: "Email" },
+    { title: "Date" },
+    { title: "Total" },
+    { title: "Payment Status" }
+  ]}
+>
+  {data.orders.map((order, index) => (
+    <IndexTable.Row id={order.id} key={order.id} position={index}>
+      <IndexTable.Cell>
+        <Button variant="plain" onClick={() => showOrder(order.id)}>
+          {order.name}
+        </Button>
+      </IndexTable.Cell>
+      <IndexTable.Cell>{order.orderId}</IndexTable.Cell>
+      <IndexTable.Cell>{order.customerName || "N/A"}</IndexTable.Cell>
+      <IndexTable.Cell>{order.customerEmail}</IndexTable.Cell>
+      <IndexTable.Cell>{formatDate(order.createdAt)}</IndexTable.Cell>
+      <IndexTable.Cell>
+        {order.totalPriceSet.shopMoney.amount} {order.totalPriceSet.shopMoney.currencyCode}
+      </IndexTable.Cell>
+      <IndexTable.Cell>{order.displayFinancialStatus || "Unknown"}</IndexTable.Cell>
+    </IndexTable.Row>
+  ))}
+</IndexTable>
+
 
 
                               <Box padding="300" display="flex" justifyContent="end">
-                                   <Pagination
-                                        hasPrevious={page > 1}
-                                        hasNext={page < totalPages}
-                                        onPrevious={() => updatePage(page - 1)}
-                                        onNext={() => updatePage(page + 1)}
-                                   />
+                                  <Pagination
+  hasPrevious={data.page > 1}
+  hasNext={data.page < Math.ceil(data.total / 25)}
+  onPrevious={() => updatePage(data.page - 1)}
+  onNext={() => updatePage(data.page + 1)}
+/>
+
                               </Box>
                          </Card>
                     </Layout.Section>
