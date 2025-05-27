@@ -585,7 +585,7 @@ function calculateMaxShippingRefund(selectedOrder, refundHistory) {
                                    <BlockStack gap={200}>
                                         <Card>
                                              <Text variant="headingMd">Order Line Items</Text>
-                                             {selectedOrder.lineItems.map(item => {
+                                             {selectedOrder.lineItems?.map(item => {
                                                   const existing = selectedProducts.find(p => p.id === item.id);
                                                   const selectedQuantity = existing?.quantity || 0;
                                                   return (
