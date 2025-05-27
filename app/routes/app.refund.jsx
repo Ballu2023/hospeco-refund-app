@@ -516,10 +516,25 @@ const refundTotal = productSubtotal + taxAmount + refundedShippingAmount;
                fetcher.submit(formData, { method: "POST" });
           }
 
-          setTimeout(() => {
-               alert(`\n✅ Refund Successful!\n\nAmount: $${amount}\nTxn: ${refundMeta.transaction_id}`);
-               goBack();
-          }, 800);
+         setTimeout(() => {
+  alert(`\n✅ Refund Successful!\n\nAmount: $${amount}\nTxn: ${refundMeta.transaction_id}`);
+  
+  setSearchParams((params) => {
+    params.delete("orderId");
+    return params;
+  });
+  
+  prevOrderIdRef.current = null;
+  setSelectedProducts([]);
+  setRefundMeta(null);
+  setShippingRefundSelected(false);
+  setShippingRefundAmount("0.00");
+  setReasonForRefund("");
+  setEmailCustomer(true);
+  setRefundHistory(null);
+
+}, 800);
+
      };
 
 
