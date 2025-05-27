@@ -361,11 +361,21 @@ useEffect(() => {
           setSearchParams(params);
      };
 
-     const goBack = () => {
-          const params = new URLSearchParams(searchParams);
-          params.delete("orderId");
-          setSearchParams(params);
-     };
+   const goBack = () => {
+  const params = new URLSearchParams(searchParams);
+  params.delete("orderId");
+  setSearchParams(params);
+
+  // ✅ Reset ALL refund-related state
+  setSelectedProducts([]);
+  setShippingRefundSelected(false);
+  setShippingRefundAmount("0.00");
+  setReasonForRefund("");
+  setEmailCustomer(true);
+  setRefundMeta(null);
+  setRefundHistory(null);
+};
+
 
 const fullOrderTax = parseFloat(selectedOrder?.totalTaxSet?.shopMoney?.amount || "0");
 
