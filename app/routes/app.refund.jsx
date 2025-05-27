@@ -553,16 +553,20 @@ function calculateMaxShippingRefund(selectedOrder, refundHistory) {
                {selectedOrder ? (
                     <>
                          <Box paddingBlockEnd="300" display="flex" flexDirection="column" gap="200">
-                              <Box display="flex" alignItems="center" gap="400">
-                                   {selectedOrder?.displayFinancialStatus && (
-                                        <Text variant="headingLg">
-                                             <b>  #{selectedOrder?.name?.replace("#", "")} • Refund {' '}</b>
-                                             <Text as="span" variant="bodySm">{' '} {' '}
-                                                  {selectedOrder.displayFinancialStatus}
-                                             </Text>
-                                        </Text>
-                                   )}
-                              </Box>
+                             <Box>
+                                                              {selectedOrder?.displayFinancialStatus && (
+                                                                   <Text variant="headingLg">
+                                                                        <InlineStack gap={300}>
+                                                                             <Text variant="headingLg">  #{selectedOrder?.name?.replace("#", "")} • Refund </Text>
+                                                                             <Box paddingBlockStart={'025'}>
+                                                                                  <Text as="p" variant="bodyMd">
+                                                                                       {selectedOrder.displayFinancialStatus}
+                                                                                  </Text>
+                                                                             </Box>
+                                                                        </InlineStack>
+                                                                   </Text>
+                                                              )}
+                                                         </Box>
 
                               <Box paddingBlock={200}>
                                    <Button plain onClick={goBack}>
@@ -583,11 +587,15 @@ function calculateMaxShippingRefund(selectedOrder, refundHistory) {
 
                                                             <InlineGrid columns={['oneHalf', 'twoThirds', 'oneHalf', 'oneHalf', 'oneHalf']} gap={100}>
 
-                                                                 <Thumbnail
-                                                                      source={item?.image?.originalSrc || "https://cdn.shopify.com/s/files/1/0752/6435/6351/files/no-image-icon.png"}
-                                                                      alt={item?.image?.altText || "Product image"}
-                                                                      size="small"
-                                                                 />
+                                                                  <Thumbnail
+                                                                                                                                           source={item?.image?.originalSrc || "https://cdn.shopify.com/s/files/1/0752/6435/6351/files/no-image-icon.png"}
+                                                                                                                                           alt={item?.image?.altText || "Product image"}
+                                                                                                                                           size="small"
+                                                                                                                                           style={{
+                                                                                                                                                width: '50px',
+                                                                                                                                                height: '50px',
+                                                                                                                                           }}
+                                                                                                                                      />
                                                                  <Text fontWeight="bold">{item.title}</Text>
 
                                                                  <Text variant="bodySm">{item.sku}</Text>
@@ -703,14 +711,17 @@ onChange={(e) => {
                                         </Card>
 
 
-                                        <Card title="Reason for Refund" sectioned>
-                                             <TextField
-                                                  value={reasonForRefund}
-                                                  onChange={setReasonForRefund}
-                                                  multiline={2}
-                                                  placeholder="Only you and staff can see this reason"
-                                             />
-                                        </Card>
+                                         <Card title="Reason for Refund">
+                                                                                   <BlockStack gap={200}>
+                                                                                        <Text as="h3" variant="headingMd">Reason for Refund</Text>
+                                                                                        <TextField
+                                                                                             value={reasonForRefund}
+                                                                                             onChange={setReasonForRefund}
+                                                                                             multiline={2}
+                                                                                        />
+                                                                                        <Text as="p" variant="bodyMd">Only you and staff can see this reason</Text>
+                                                                                   </BlockStack>
+                                                                              </Card>
 
                                         {/* ✅ Refund History Section */}
                                         <Card title="Refunded Items" sectioned>
