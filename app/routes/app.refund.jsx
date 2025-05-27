@@ -17,20 +17,24 @@ export const loader = async ({ request }) => {
 
   // ⚡ If we're on page > 1, we need to get the cursor for that page.
   if (page > 1) {
-    const skipCount = (page - 1) * PAGE_SIZE;
-    const cursorQuery = `
-      query GetCursors {
-        orders(first: ${skipCount}, reverse: true) {
-          edges {
-            cursor
-          }
+  const skipCount = (page - 1) * PAGE_SIZE;
+  const cursorQuery = `
+    query GetCursors {
+      orders(first: ${skipCount}, reverse: true) {
+        edges {
+          cursor
         }
       }
-    `;
-    const cursorResponse = await admin.graphql(cursorQuery);
-    const cursorData = await cursorResponse.json();
-const edges = cursorData.data.orders.edges;
-afterCursor = edges.length > 0 ? edges[edges.length - 1].cursor : null;
+    }
+  `;
+  const cursorResponse = await admin.graphql(cursorQuery);
+  const cursorData = await cursorResponse.json();
+
+  // ✅ SAFE version
+  const edges = cursorData.data?.orders?.edges || [];
+  afterCursor = edges.length > 0 ? edges[edges.length - 1].cursor : null;
+
+
 
   }
 
