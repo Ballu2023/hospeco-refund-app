@@ -395,18 +395,27 @@ const productSubtotal = selectedProducts.reduce(
   (sum, item) => sum + (parseFloat(item.price) * item.quantity), 0
 );
 
-const productTax = selectedProducts.reduce((totalTax, selected) => {
-  const originalItem = (selectedOrder?.lineItems || []).find(item => item.id === selected.id);
+const productTax = (selectedProducts?.length ? selectedProducts : []).reduce((totalTax, selected) => {
+  // ✅ Safe fallback for selectedOrder
+  if (!selectedOrder || !selectedOrder.lineItems) return totalTax;
+
+  // ✅ Find originalItem safely
+  const originalItem = (selectedOrder.lineItems || []).find(item => item.id === selected.id);
+
+  // ✅ If originalItem not found or has no taxLines, skip it
   if (!originalItem || !originalItem.taxLines?.length) return totalTax;
 
   const totalItemTax = originalItem.taxLines.reduce(
     (sum, tax) => sum + parseFloat(tax.price || 0), 0
   );
 
-  const totalQty = originalItem.quantity + (originalItem.originalQuantityRefunded || 0);
+  const totalQty = (originalItem.quantity || 0) + (originalItem.originalQuantityRefunded || 0);
+
+  // ✅ Avoid division by zero
   const unitTax = totalQty > 0 ? totalItemTax / totalQty : 0;
   return totalTax + unitTax * selected.quantity;
 }, 0);
+
 
 
 
