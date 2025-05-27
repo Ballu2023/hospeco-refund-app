@@ -2,6 +2,7 @@
 import { json } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 import { useDebounce } from 'use-debounce';
+import { ArrowLeftIcon } from "@shopify/polaris-icons";
 
 
 export const loader = async ({ request }) => {
