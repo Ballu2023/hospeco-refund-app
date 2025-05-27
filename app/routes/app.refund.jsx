@@ -15,29 +15,23 @@ export const loader = async ({ request }) => {
   const PAGE_SIZE = 10;
   let afterCursor = null;
 
-  // ⚡ If we're on page > 1, we need to get the cursor for that page.
+  // ⚡ Fetch cursor for pagination
   if (page > 1) {
-  const skipCount = (page - 1) * PAGE_SIZE;
-  const cursorQuery = `
-    query GetCursors {
-      orders(first: ${skipCount}, reverse: true) {
-        edges {
-          cursor
+    const skipCount = (page - 1) * PAGE_SIZE;
+    const cursorQuery = `
+      query GetCursors {
+        orders(first: ${skipCount}, reverse: true) {
+          edges { cursor }
         }
       }
-    }
-  `;
-  const cursorResponse = await admin.graphql(cursorQuery);
-  const cursorData = await cursorResponse.json();
-
-  // ✅ SAFE version
-  const edges = cursorData.data?.orders?.edges || [];
-  afterCursor = edges.length > 0 ? edges[edges.length - 1].cursor : null;
-
-
-
+    `;
+    const cursorResponse = await admin.graphql(cursorQuery);
+    const cursorData = await cursorResponse.json();
+    const edges = cursorData.data?.orders?.edges || [];
+    afterCursor = edges.length > 0 ? edges[edges.length - 1].cursor : null;
   }
 
+  // ⚡ Main orders query
   const query = `
     query GetOrders($first: Int!, $after: String) {
       orders(first: $first, after: $after, reverse: true) {
@@ -85,6 +79,7 @@ export const loader = async ({ request }) => {
     throw new Error("Failed to fetch orders");
   }
 
+  // ✅ Process orders
   const orders = await Promise.all(
     data.data.orders.edges
       .filter(({ node }) => node?.sourceName !== "web")
@@ -108,13 +103,10 @@ export const loader = async ({ request }) => {
           console.warn("Transaction fetch failed:", e);
         }
 
-        const metafields = {};
-        node.metafields.edges.forEach(({ node: mf }) => {
-          metafields[mf.key] = mf.value;
-        });
+        // ⚠️ Ensure lineItems is always an array
+        let lineItems = (node.lineItems?.edges || []).map(({ node }) => node);
 
-        let lineItems = node.lineItems.edges.map(({ node }) => node);
-
+        // Refund adjustment if needed
         const selectedOrderNum = selectedOrderId?.split("/").pop();
         if (selectedOrderNum === orderIdNum) {
           try {
@@ -122,7 +114,7 @@ export const loader = async ({ request }) => {
             const refundJson = await refundRes.json();
             const refundedMap = {};
             refundJson.refunds?.forEach(refund => {
-              refund.refund_line_items.forEach(refItem => {
+              refund.refund_line_items?.forEach(refItem => {
                 const plainId = refItem.line_item_id?.toString();
                 if (plainId) {
                   refundedMap[plainId] = (refundedMap[plainId] || 0) + refItem.quantity;
@@ -143,28 +135,30 @@ export const loader = async ({ request }) => {
           }
         }
 
+        // ⚠️ Safe fallback for customer fields
         const customerName = `${node.customer?.firstName || ""} ${node.customer?.lastName || ""}`.trim();
-        const customerEmail = node.customer?.email || node.email;
+        const customerEmail = node.customer?.email || node.email || "";
 
         return {
           ...node,
           cursor,
-          lineItems,
+          lineItems: lineItems || [], // Always an array
           orderId: orderIdNum,
           transactionId,
           gateway,
           locationId,
-          metafields,
+          metafields: Object.fromEntries(node.metafields?.edges?.map(({ node }) => [node.key, node.value]) || []),
           customerName,
           customerEmail,
         };
       })
   );
 
+  // ✅ Fix crash: Safe fallback on .toLowerCase()
   const filteredOrders = search
     ? orders.filter(order =>
-        order.name.toLowerCase().replace("#", "").includes(search.replace("#", "")) ||
-        order.customerEmail.toLowerCase().includes(search)
+        (order.name || "").toLowerCase().replace("#", "").includes(search.replace("#", "")) ||
+        (order.customerEmail || "").toLowerCase().includes(search)
       )
     : orders;
 
@@ -177,6 +171,7 @@ export const loader = async ({ request }) => {
     selectedOrder,
   });
 };
+
 
 
 export const action = async ({ request }) => {
@@ -387,18 +382,19 @@ const shippingTax = shippingRefundSelected && fullShippingAmount > 0
   ? (fullShippingTax * (refundedShippingAmount / fullShippingAmount))
   : 0;
 
-const fullSubtotal = selectedOrder?.lineItems?.reduce(
+const fullSubtotal = (selectedOrder?.lineItems || []).reduce(
   (sum, item) =>
     sum + parseFloat(item.discountedUnitPriceSet?.shopMoney?.amount || "0") * item.quantity,
   0
 );
+
 
 const productSubtotal = selectedProducts.reduce(
   (sum, item) => sum + (parseFloat(item.price) * item.quantity), 0
 );
 
 const productTax = selectedProducts.reduce((totalTax, selected) => {
-  const originalItem = selectedOrder?.lineItems?.find(item => item.id === selected.id);
+  const originalItem = (selectedOrder?.lineItems || []).find(item => item.id === selected.id);
   if (!originalItem || !originalItem.taxLines?.length) return totalTax;
 
   const totalItemTax = originalItem.taxLines.reduce(
@@ -409,6 +405,7 @@ const productTax = selectedProducts.reduce((totalTax, selected) => {
   const unitTax = totalQty > 0 ? totalItemTax / totalQty : 0;
   return totalTax + unitTax * selected.quantity;
 }, 0);
+
 
 
 
@@ -736,7 +733,7 @@ onChange={(e) => {
                                              <div
                                              key={refundIndex}
                                              >
-                                                  {refund.refund_line_items.map((item, itemIndex) => {
+                                                  {(refund.refund_line_items || []).map((item, itemIndex) => {
                                                     const line = item.line_item;
                                                                  const imageUrl = `https://cdn.shopify.com/s/files/1/0752/6435/6351/files/no-image-icon.png`;
                                                                  return ( 
