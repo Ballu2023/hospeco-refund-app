@@ -270,6 +270,7 @@ export default function RefundPage() {
 }, [debouncedFilter]);
 
 useEffect(() => {
+  if (!selectedOrder) return; // 🛡️ guard
   if (selectedOrder?.id !== prevOrderIdRef.current) {
     prevOrderIdRef.current = selectedOrder?.id;
     setSelectedProducts([]);
@@ -283,6 +284,7 @@ useEffect(() => {
     setShippingAmountManuallyChanged(false); // ✅ Reset manual flag
   }
 }, [selectedOrder]);
+
 
 
 
@@ -553,7 +555,7 @@ function calculateMaxShippingRefund(selectedOrder, refundHistory) {
      return (
           <Page>
                {/* <div style={{ padding: 20 }}> */}
-               {selectedOrder ? (
+               {selectedOrder && selectedOrder.lineItems ? (
                     <>
                         <Box paddingBlockEnd="300">
                                                      <Box>
