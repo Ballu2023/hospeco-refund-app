@@ -553,20 +553,16 @@ function calculateMaxShippingRefund(selectedOrder, refundHistory) {
                {selectedOrder ? (
                     <>
                          <Box paddingBlockEnd="300" display="flex" flexDirection="column" gap="200">
-                             <Box>
-                                                              {selectedOrder?.displayFinancialStatus && (
-                                                                   <Text variant="headingLg">
-                                                                        <InlineStack gap={300}>
-                                                                             <Text variant="headingLg">  #{selectedOrder?.name?.replace("#", "")} • Refund </Text>
-                                                                             <Box paddingBlockStart={'025'}>
-                                                                                  <Text as="p" variant="bodyMd">
-                                                                                       {selectedOrder.displayFinancialStatus}
-                                                                                  </Text>
-                                                                             </Box>
-                                                                        </InlineStack>
-                                                                   </Text>
-                                                              )}
-                                                         </Box>
+                              <Box display="flex" alignItems="center" gap="400">
+                                   {selectedOrder?.displayFinancialStatus && (
+                                        <Text variant="headingLg">
+                                             <b>  #{selectedOrder?.name?.replace("#", "")} • Refund {' '}</b>
+                                             <Text as="span" variant="bodySm">{' '} {' '}
+                                                  {selectedOrder.displayFinancialStatus}
+                                             </Text>
+                                        </Text>
+                                   )}
+                              </Box>
 
                               <Box paddingBlock={200}>
                                    <Button plain onClick={goBack}>
@@ -587,15 +583,11 @@ function calculateMaxShippingRefund(selectedOrder, refundHistory) {
 
                                                             <InlineGrid columns={['oneHalf', 'twoThirds', 'oneHalf', 'oneHalf', 'oneHalf']} gap={100}>
 
-                                                                  <Thumbnail
-                                                                                                                                           source={item?.image?.originalSrc || "https://cdn.shopify.com/s/files/1/0752/6435/6351/files/no-image-icon.png"}
-                                                                                                                                           alt={item?.image?.altText || "Product image"}
-                                                                                                                                           size="small"
-                                                                                                                                           style={{
-                                                                                                                                                width: '50px',
-                                                                                                                                                height: '50px',
-                                                                                                                                           }}
-                                                                                                                                      />
+                                                                 <Thumbnail
+                                                                      source={item?.image?.originalSrc || "https://cdn.shopify.com/s/files/1/0752/6435/6351/files/no-image-icon.png"}
+                                                                      alt={item?.image?.altText || "Product image"}
+                                                                      size="small"
+                                                                 />
                                                                  <Text fontWeight="bold">{item.title}</Text>
 
                                                                  <Text variant="bodySm">{item.sku}</Text>
