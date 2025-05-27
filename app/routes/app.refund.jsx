@@ -390,11 +390,6 @@ const fullSubtotal = (selectedOrder?.lineItems || []).reduce(
   0
 );
 
-
-const productSubtotal = selectedProducts.reduce(
-  (sum, item) => sum + (parseFloat(item.price) * item.quantity), 0
-);
-
 const productTax = selectedProducts.reduce((totalTax, selected) => {
   const originalItem = (selectedOrder?.lineItems || []).find(item => item.id === selected.id);
   if (!originalItem || !originalItem.taxLines?.length) return totalTax;
@@ -407,6 +402,7 @@ const productTax = selectedProducts.reduce((totalTax, selected) => {
   const unitTax = totalQty > 0 ? totalItemTax / totalQty : 0;
   return totalTax + unitTax * selected.quantity;
 }, 0);
+
 
 
 
@@ -599,7 +595,7 @@ function calculateMaxShippingRefund(selectedOrder, refundHistory) {
                                    <BlockStack gap={200}>
                                         <Card>
                                              <Text variant="headingMd">Order Line Items</Text>
-                                             {selectedOrder.lineItems?.map(item => {
+                                             {(selectedOrder?.lineItems || []).map(item => {
                                                   const existing = selectedProducts.find(p => p.id === item.id);
                                                   const selectedQuantity = existing?.quantity || 0;
                                                   return (
