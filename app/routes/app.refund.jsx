@@ -913,8 +913,8 @@ onChange={(e) => {
 
 
 
-                             <Box padding="300" display="flex" justifyContent="center">
-  {(() => {
+                            <Box padding="300" display="flex" justifyContent="center">
+  {data.orders.length > 0 && (() => {
     const totalPages = Math.ceil(data.total / 10);
     const currentPage = data.page;
     const windowSize = 3; // 👈 Show 3 pages: prev, current, next
@@ -930,18 +930,22 @@ onChange={(e) => {
       pageNumbers.push(i);
     }
 
-    return pageNumbers.map(pageIndex => (
-      <Button
-        key={pageIndex}
-        variant={pageIndex === currentPage ? "primary" : "secondary"}
-        onClick={() => updatePage(pageIndex)}
-        style={{ margin: "0 5px" }}
-      >
-        {pageIndex}
-      </Button>
-    ));
+    return (
+      <InlineStack gap="200">
+        {pageNumbers.map(pageIndex => (
+          <Button
+            key={pageIndex}
+            variant={pageIndex === currentPage ? "primary" : "secondary"}
+            onClick={() => updatePage(pageIndex)}
+          >
+            {pageIndex}
+          </Button>
+        ))}
+      </InlineStack>
+    );
   })()}
 </Box>
+
 
 
                          </Card>
