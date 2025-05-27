@@ -390,6 +390,11 @@ const fullSubtotal = (selectedOrder?.lineItems || []).reduce(
   0
 );
 
+
+const productSubtotal = selectedProducts.reduce(
+  (sum, item) => sum + (parseFloat(item.price) * item.quantity), 0
+);
+
 const productTax = selectedProducts.reduce((totalTax, selected) => {
   const originalItem = (selectedOrder?.lineItems || []).find(item => item.id === selected.id);
   if (!originalItem || !originalItem.taxLines?.length) return totalTax;
@@ -402,7 +407,6 @@ const productTax = selectedProducts.reduce((totalTax, selected) => {
   const unitTax = totalQty > 0 ? totalItemTax / totalQty : 0;
   return totalTax + unitTax * selected.quantity;
 }, 0);
-
 
 
 
@@ -512,25 +516,10 @@ const refundTotal = productSubtotal + taxAmount + refundedShippingAmount;
                fetcher.submit(formData, { method: "POST" });
           }
 
-         setTimeout(() => {
-  alert(`\n✅ Refund Successful!\n\nAmount: $${amount}\nTxn: ${refundMeta.transaction_id}`);
-  
-  setSearchParams((params) => {
-    params.delete("orderId");
-    return params;
-  });
-  
-  prevOrderIdRef.current = null;
-  setSelectedProducts([]);
-  setRefundMeta(null);
-  setShippingRefundSelected(false);
-  setShippingRefundAmount("0.00");
-  setReasonForRefund("");
-  setEmailCustomer(true);
-  setRefundHistory(null);
-
-}, 800);
-
+          setTimeout(() => {
+               alert(`\n✅ Refund Successful!\n\nAmount: $${amount}\nTxn: ${refundMeta.transaction_id}`);
+               goBack();
+          }, 800);
      };
 
 
@@ -595,7 +584,7 @@ function calculateMaxShippingRefund(selectedOrder, refundHistory) {
                                    <BlockStack gap={200}>
                                         <Card>
                                              <Text variant="headingMd">Order Line Items</Text>
-                                             {(selectedOrder?.lineItems || []).map(item => {
+                                             {selectedOrder.lineItems?.map(item => {
                                                   const existing = selectedProducts.find(p => p.id === item.id);
                                                   const selectedQuantity = existing?.quantity || 0;
                                                   return (
