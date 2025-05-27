@@ -15,7 +15,6 @@ export const loader = async ({ request }) => {
   const PAGE_SIZE = 10;
   let afterCursor = null;
 
-  // ⚡ Fetch cursor for pagination
   if (page > 1) {
     const skipCount = (page - 1) * PAGE_SIZE;
     const cursorQuery = `
@@ -31,7 +30,6 @@ export const loader = async ({ request }) => {
     afterCursor = edges.length > 0 ? edges[edges.length - 1].cursor : null;
   }
 
-  // ⚡ Main orders query
   const query = `
     query GetOrders($first: Int!, $after: String) {
       orders(first: $first, after: $after, reverse: true) {
@@ -79,7 +77,6 @@ export const loader = async ({ request }) => {
     throw new Error("Failed to fetch orders");
   }
 
-  // ✅ Process orders
   const orders = await Promise.all(
     data.data.orders.edges
       .filter(({ node }) => node?.sourceName !== "web")
@@ -103,46 +100,49 @@ export const loader = async ({ request }) => {
           console.warn("Transaction fetch failed:", e);
         }
 
-        // ⚠️ Ensure lineItems is always an array
         let lineItems = (node.lineItems?.edges || []).map(({ node }) => node);
 
-        // Refund adjustment if needed
-        const selectedOrderNum = selectedOrderId?.split("/").pop();
-        if (selectedOrderNum === orderIdNum) {
-          try {
-            const refundRes = await fetch(`https://phpstack-1419716-5486887.cloudwaysapps.com/refunds/${orderIdNum}`);
-            const refundJson = await refundRes.json();
-            const refundedMap = {};
-            refundJson.refunds?.forEach(refund => {
-              refund.refund_line_items?.forEach(refItem => {
-                const plainId = refItem.line_item_id?.toString();
-                if (plainId) {
-                  refundedMap[plainId] = (refundedMap[plainId] || 0) + refItem.quantity;
-                }
-              });
+        let totalRefunded = 0;
+        try {
+          const refundRes = await fetch(`https://phpstack-1419716-5486887.cloudwaysapps.com/refunds/${orderIdNum}`);
+          const refundJson = await refundRes.json();
+          refundJson.refunds?.forEach(refund => {
+            totalRefunded += parseFloat(refund.transactions?.[0]?.amount || 0);
+          });
+
+          const refundedMap = {};
+          refundJson.refunds?.forEach(refund => {
+            refund.refund_line_items?.forEach(refItem => {
+              const plainId = refItem.line_item_id?.toString();
+              if (plainId) {
+                refundedMap[plainId] = (refundedMap[plainId] || 0) + refItem.quantity;
+              }
             });
-            lineItems = lineItems
-              .map(item => {
-                const itemIdPlain = item.id.split("/").pop();
-                const refundedQty = refundedMap[itemIdPlain] || 0;
-                const remainingQty = item.quantity - refundedQty;
-                if (remainingQty <= 0) return null;
-                return { ...item, quantity: remainingQty, originalQuantityRefunded: refundedQty };
-              })
-              .filter(Boolean);
-          } catch (err) {
-            console.error("❌ Failed to fetch refund data:", err);
-          }
+          });
+
+          lineItems = lineItems
+            .map(item => {
+              const itemIdPlain = item.id.split("/").pop();
+              const refundedQty = refundedMap[itemIdPlain] || 0;
+              const remainingQty = item.quantity - refundedQty;
+              if (remainingQty <= 0) return null;
+              return { ...item, quantity: remainingQty, originalQuantityRefunded: refundedQty };
+            })
+            .filter(Boolean);
+        } catch (err) {
+          console.error("❌ Failed to fetch refund data:", err);
         }
 
-        // ⚠️ Safe fallback for customer fields
         const customerName = `${node.customer?.firstName || ""} ${node.customer?.lastName || ""}`.trim();
         const customerEmail = node.customer?.email || node.email || "";
+
+        const orderAmount = parseFloat(node.totalPriceSet.shopMoney.amount || 0);
+        const remainingAmount = Math.max(orderAmount - totalRefunded, 0).toFixed(2);
 
         return {
           ...node,
           cursor,
-          lineItems: lineItems || [], // Always an array
+          lineItems: lineItems || [],
           orderId: orderIdNum,
           transactionId,
           gateway,
@@ -150,11 +150,12 @@ export const loader = async ({ request }) => {
           metafields: Object.fromEntries(node.metafields?.edges?.map(({ node }) => [node.key, node.value]) || []),
           customerName,
           customerEmail,
+          totalRefunded: totalRefunded.toFixed(2),
+          remainingAmount
         };
       })
   );
 
-  // ✅ Fix crash: Safe fallback on .toLowerCase()
   const filteredOrders = search
     ? orders.filter(order =>
         (order.name || "").toLowerCase().replace("#", "").includes(search.replace("#", "")) ||
@@ -171,6 +172,7 @@ export const loader = async ({ request }) => {
     selectedOrder,
   });
 };
+
 
 
 
@@ -893,22 +895,22 @@ onChange={(e) => {
   ]}
 >
   {data.orders.map((order, index) => (
-    <IndexTable.Row id={order.id} key={order.id} position={index}>
-      <IndexTable.Cell>
-        <Button variant="plain" onClick={() => showOrder(order.id)}>
-          {order.name}
-        </Button>
-      </IndexTable.Cell>
-      <IndexTable.Cell>{order.orderId}</IndexTable.Cell>
-      <IndexTable.Cell>{order.customerName || "N/A"}</IndexTable.Cell>
-      <IndexTable.Cell>{order.customerEmail}</IndexTable.Cell>
-      <IndexTable.Cell>{formatDate(order.createdAt)}</IndexTable.Cell>
-      <IndexTable.Cell>
-        {order.totalPriceSet.shopMoney.amount} {order.totalPriceSet.shopMoney.currencyCode}
-      </IndexTable.Cell>
-      <IndexTable.Cell>{order.displayFinancialStatus || "Unknown"}</IndexTable.Cell>
-    </IndexTable.Row>
-  ))}
+  <IndexTable.Row id={order.id} key={order.id} position={index}>
+    <IndexTable.Cell>
+      <Button variant="plain" onClick={() => showOrder(order.id)}>
+        {order.name}
+      </Button>
+    </IndexTable.Cell>
+    <IndexTable.Cell>{order.orderId}</IndexTable.Cell>
+    <IndexTable.Cell>{order.customerName || "N/A"}</IndexTable.Cell>
+    <IndexTable.Cell>{order.customerEmail}</IndexTable.Cell>
+    <IndexTable.Cell>{formatDate(order.createdAt)}</IndexTable.Cell>
+    <IndexTable.Cell>
+      {order.remainingAmount} {order.totalPriceSet.shopMoney.currencyCode}
+    </IndexTable.Cell>
+    <IndexTable.Cell>{order.displayFinancialStatus || "Unknown"}</IndexTable.Cell>
+  </IndexTable.Row>
+))}
 </IndexTable>
 
 
