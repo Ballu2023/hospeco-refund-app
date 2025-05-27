@@ -28,8 +28,9 @@ export const loader = async ({ request }) => {
     `;
     const cursorResponse = await admin.graphql(cursorQuery);
     const cursorData = await cursorResponse.json();
-    const edges = cursorData.data.orders.edges;
-    afterCursor = edges.length > 0 ? edges[edges.length - 1].cursor : null;
+const edges = cursorData.data.orders.edges;
+afterCursor = edges.length > 0 ? edges[edges.length - 1].cursor : null;
+
   }
 
   const query = `
@@ -552,24 +553,28 @@ function calculateMaxShippingRefund(selectedOrder, refundHistory) {
                {/* <div style={{ padding: 20 }}> */}
                {selectedOrder ? (
                     <>
-                         <Box paddingBlockEnd="300" display="flex" flexDirection="column" gap="200">
-                              <Box display="flex" alignItems="center" gap="400">
-                                   {selectedOrder?.displayFinancialStatus && (
-                                        <Text variant="headingLg">
-                                             <b>  #{selectedOrder?.name?.replace("#", "")} • Refund {' '}</b>
-                                             <Text as="span" variant="bodySm">{' '} {' '}
-                                                  {selectedOrder.displayFinancialStatus}
-                                             </Text>
-                                        </Text>
-                                   )}
-                              </Box>
-
-                              <Box paddingBlock={200}>
-                                   <Button plain onClick={goBack}>
-                                        &larr; Back to Order List
-                                   </Button>
-                              </Box>
-                         </Box>
+                        <Box paddingBlockEnd="300">
+                                                     <Box>
+                                                          {selectedOrder?.displayFinancialStatus && (
+                                                               <Text variant="headingLg">
+                                                                    <InlineStack gap={300}>
+                                                                         <Text variant="headingLg">  #{selectedOrder?.name?.replace("#", "")} • Refund </Text>
+                                                                         <Box paddingBlockStart={'025'}>
+                                                                              <Text as="p" variant="bodyMd">
+                                                                                   {selectedOrder.displayFinancialStatus}
+                                                                              </Text>
+                                                                         </Box>
+                                                                    </InlineStack>
+                                                               </Text>
+                                                          )}
+                                                     </Box>
+                       
+                                                     <Box paddingBlock={200}>
+                                                          <Button plain onClick={goBack} icon={ArrowLeftIcon}>
+                                                               Back to Order List
+                                                          </Button>
+                                                     </Box>
+                                                </Box>
                          <Layout>
                               <Layout.Section sectioned>
                                    <BlockStack gap={200}>
