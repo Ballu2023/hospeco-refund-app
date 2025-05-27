@@ -748,12 +748,10 @@ onChange={(e) => {
                                              >
                                                   {(refund.refund_line_items || []).map((item, itemIndex) => {
                                                     const line = item.line_item;
-                                                                 const imageUrl = `https://cdn.shopify.com/s/files/1/0752/6435/6351/files/no-image-icon.png`;
                                                                  return ( 
                                                   <Box
                                                        key={itemIndex} 
                                                        paddingBlock="200" display="flex" gap="300" paddingBlockEnd={300}>
-                                                     <img src={imageUrl} alt={line?.title} width={60} height={60} style={{ borderRadius: 4, objectFit: 'cover' }} />
                                                        <Box paddingBlockEnd={300}>
                                                             <Text fontWeight="bold">{
                                                                  line?.title || 
@@ -905,7 +903,7 @@ onChange={(e) => {
     <IndexTable.Cell>{order.customerName || "N/A"}</IndexTable.Cell>
     <IndexTable.Cell>{order.customerEmail}</IndexTable.Cell>
     <IndexTable.Cell>{formatDate(order.createdAt)}</IndexTable.Cell>
-    <IndexTable.Cell>
+    <IndexTable.Cell>$
       {order.remainingAmount} {order.totalPriceSet.shopMoney.currencyCode}
     </IndexTable.Cell>
     <IndexTable.Cell>{order.displayFinancialStatus || "Unknown"}</IndexTable.Cell>
