@@ -512,16 +512,10 @@ export default function RefundPage() {
       fetcher.submit(formData, { method: "POST" });
     }
 
-  setTimeout(() => {
-  alert(`\n✅ Refund Successful!\n\nAmount: $${amount}\nTxn: ${refundMeta.transaction_id}`);
-  setSearchParams(params => {
-    const p = new URLSearchParams(params);
-    p.delete("orderId");
-    return p;
-  });
-  // This will not reload the page — just update the search param!
-}, 800);
-
+    setTimeout(() => {
+      alert(`\n✅ Refund Successful!\n\nAmount: $${amount}\nTxn: ${refundMeta.transaction_id}`);
+      goBack();
+    }, 800);
   };
 
   function calculateMaxShippingRefund(selectedOrder, refundHistory) {
