@@ -258,7 +258,7 @@ export default function RefundPage() {
 
   // Use initial loader data as fallback, but allow fetcher to update orders, total, and page
   const data = {
-    orders: fetcher?.data?.orders || orders || [],
+    orders: Array.isArray(fetcher?.data?.orders) ? fetcher.data.orders : (Array.isArray(orders) ? orders : []),
     total: fetcher?.data?.total || total || 0,
     page: fetcher?.data?.page || page || 1,
     selectedOrder: initialSelectedOrder, // Always use initialSelectedOrder to avoid fetcher overwriting it
@@ -271,7 +271,11 @@ export default function RefundPage() {
   useEffect(() => {
     console.log("Selected Order:", selectedOrder);
     console.log("Orders:", data?.orders);
-  }, [selectedOrder, data?.orders]);
+    console.log("Refund History:", refundHistory);
+    if (!Array.isArray(data?.orders)) {
+      console.error("❌ data.orders is not an array:", data?.orders);
+    }
+  }, [selectedOrder, data?.orders, refundHistory]);
 
   useEffect(() => {
     const params = new URLSearchParams(searchParams);
@@ -314,7 +318,13 @@ export default function RefundPage() {
         if (!orderIdNum) throw new Error("Invalid order ID");
         const res = await fetch(`https://phpstack-1419716-5486887.cloudwaysapps.com/refunds/${orderIdNum}`);
         const data = await res.json();
-        setRefundHistory(data?.refunds || []);
+        // Ensure refund history is an array
+        if (!Array.isArray(data?.refunds)) {
+          console.error("❌ Refund history is not an array:", data?.refunds);
+          setRefundHistory([]);
+        } else {
+          setRefundHistory(data.refunds);
+        }
       } catch (err) {
         console.error("❌ Error fetching refund history:", err);
         setRefundHistory([]);
@@ -330,7 +340,8 @@ export default function RefundPage() {
 
     let totalShippingRefunded = 0;
     refundHistory.forEach(refund => {
-      refund?.refund_shipping_lines?.forEach(ship => {
+      const shippingLines = Array.isArray(refund?.refund_shipping_lines) ? refund.refund_shipping_lines : [];
+      shippingLines.forEach(ship => {
         totalShippingRefunded += parseFloat(ship?.subtotal_amount_set?.shop_money?.amount || 0);
       });
     });
@@ -442,7 +453,7 @@ export default function RefundPage() {
     const formData = new FormData();
     formData.append("body", JSON.stringify({ ...preparePayload(), mode: "calculate" }));
     fetcher.submit(formData, { method: "POST" });
-    setTimeout(() => setIsCalculating(false), 1000); // Reset after 1 second to allow fetcher to complete
+    setIsCalculating(false);
   };
 
   const handleRefund = async () => {
@@ -483,7 +494,7 @@ export default function RefundPage() {
         }
 
         const payload = preparePayload();
-        payload.variables.input.note = `Refunded via PayPal: ${data?.paypalRefundId || "N/A"} at 10:33 AM IST on 02/06/2025`;
+        payload.variables.input.note = `Refunded via PayPal: ${data?.paypalRefundId || "N/A"} at 11:16 AM IST on 02/06/2025`;
         const formData = new FormData();
         formData.append("body", JSON.stringify({ ...payload, mode: "refund" }));
         fetcher.submit(formData, { method: "POST" });
@@ -503,14 +514,14 @@ export default function RefundPage() {
         }
 
         const payload = preparePayload();
-        payload.variables.input.note = `Refunded via Stripe: ${data?.stripeRefundId || "N/A"} at 10:33 AM IST on 02/06/2025`;
+        payload.variables.input.note = `Refunded via Stripe: ${data?.stripeRefundId || "N/A"} at 11:16 AM IST on 02/06/2025`;
         const formData = new FormData();
         formData.append("body", JSON.stringify({ ...payload, mode: "refund" }));
         fetcher.submit(formData, { method: "POST" });
 
       } else {
         const payload = preparePayload();
-        payload.variables.input.note = `Refund processed via app at 10:33 AM IST on 02/06/2025`;
+        payload.variables.input.note = `Refund processed via app at 11:16 AM IST on 02/06/2025`;
         const formData = new FormData();
         formData.append("body", JSON.stringify({ ...payload, mode: "refund" }));
         fetcher.submit(formData, { method: "POST" });
@@ -532,8 +543,10 @@ export default function RefundPage() {
     );
 
     let totalShippingRefunded = 0;
-    refundHistory?.forEach(refund => {
-      refund?.refund_shipping_lines?.forEach(ship => {
+    const safeRefundHistory = Array.isArray(refundHistory) ? refundHistory : [];
+    safeRefundHistory.forEach(refund => {
+      const shippingLines = Array.isArray(refund?.refund_shipping_lines) ? refund.refund_shipping_lines : [];
+      shippingLines.forEach(ship => {
         totalShippingRefunded += parseFloat(ship?.subtotal_amount_set?.shop_money?.amount || 0);
       });
     });
@@ -712,7 +725,7 @@ export default function RefundPage() {
                   ) : refundHistory?.length > 0 ? (
                     refundHistory.map((refund, refundIndex) => (
                       <div key={refundIndex}>
-                        {(refund?.refund_line_items || []).map((item, itemIndex) => {
+                        {(Array.isArray(refund?.refund_line_items) ? refund.refund_line_items : []).map((item, itemIndex) => {
                           const line = item?.line_item || {};
                           return (
                             <Box
@@ -726,8 +739,8 @@ export default function RefundPage() {
                                 <Text fontWeight="bold">
                                   {line?.title || "Untitled Product"}
                                 </Text>
-                                <Text>SKU: ${line?.sku || "N/A"}</Text>
-                                <Text>Quantity Refunded: ${item?.quantity || 0}</Text>
+                                <Text>SKU: {line?.sku || "N/A"}</Text>
+                                <Text>Quantity Refunded: {item?.quantity || 0}</Text>
                                 <Text>Amount Refunded: ${parseFloat(item?.subtotal || 0).toFixed(2)}</Text>
                                 <Text>Tax: ${parseFloat(item?.total_tax || 0).toFixed(2)}</Text>
                               </Box>
@@ -751,12 +764,12 @@ export default function RefundPage() {
                             <Box paddingBlockStart="100" paddingBlockEnd={300}>
                               <Text fontWeight="bold">Transaction ID:</Text>
                               <Text>{refund.transactions[0].id}</Text>
-                              <Text>Gateway: ${refund.transactions[0].gateway}</Text>
+                              <Text>Gateway: {refund.transactions[0].gateway}</Text>
                             </Box>
                           )}
                           <Divider borderColor="border" />
                         </Box>
-                        {refund?.refund_shipping_lines?.length > 0 && (
+                        {(Array.isArray(refund?.refund_shipping_lines) && refund.refund_shipping_lines.length > 0) && (
                           <Box paddingBlock="200" paddingBlockEnd={300}>
                             <Text fontWeight="bold">Shipping Refunded</Text>
                             <Text>
@@ -795,18 +808,32 @@ export default function RefundPage() {
                       <Text fontWeight="bold">Refund total</Text>
                       <Text fontWeight="bold">${refundTotal.toFixed(2)}</Text>
                     </Box>
-                    <Box paddingBlockStart="200">
-                      <Button fullWidth variant="secondary" onClick={handleCalculateRefund} disabled={selectedProducts.length === 0 || isCalculating}>
-                        Calculate Refund
-                      </Button>
-                    </Box>
-                    <Box paddingBlockStart="300">
-                      <Button fullWidth variant="primary" onClick={handleRefund} disabled={!refundMeta || selectedProducts.length === 0 || isRefunding}>
-                        {refundMeta
-                          ? `Refund $${refundMeta?.amount || "0"}`
-                          : `Refund $${refundTotal.toFixed(2)}`}
-                      </Button>
-                    </Box>
+                    {/* Show "Calculate Refund" button only if refundMeta is null */}
+                    {!refundMeta && (
+                      <Box paddingBlockStart="200">
+                        <Button
+                          fullWidth
+                          variant="secondary"
+                          onClick={handleCalculateRefund}
+                          disabled={selectedProducts.length === 0 || isCalculating}
+                        >
+                          Calculate Refund
+                        </Button>
+                      </Box>
+                    )}
+                    {/* Show "Refund" button only if refundMeta is set */}
+                    {refundMeta && (
+                      <Box paddingBlockStart="300">
+                        <Button
+                          fullWidth
+                          variant="primary"
+                          onClick={handleRefund}
+                          disabled={selectedProducts.length === 0 || isRefunding}
+                        >
+                          Refund ${refundMeta?.amount || "0"}
+                        </Button>
+                      </Box>
+                    )}
                   </BlockStack>
                 </Card>
               </Box>
