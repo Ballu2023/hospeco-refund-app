@@ -234,11 +234,11 @@ import {
   Banner,
   InlineStack
 } from "@shopify/polaris";
-import { useLoaderData, useSearchParams, useFetcher, useNavigation } from "@remix-run/react";
+import { useLoaderData, useSearchParams, useFetcher } from "@remix-run/react";
 import { useState, useEffect, useRef } from "react";
 
 export default function RefundPage() {
-  const { orders, total, page, selectedOrder: initialSelectedOrder } = useLoaderData();
+  const { orders, total, page, selectedOrder } = useLoaderData();
   const [searchParams, setSearchParams] = useSearchParams();
   const [selectedProducts, setSelectedProducts] = useState([]);
   const [shippingRefundSelected, setShippingRefundSelected] = useState(false);
@@ -251,20 +251,15 @@ export default function RefundPage() {
   const [refundHistory, setRefundHistory] = useState([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const fetcher = useFetcher();
-  const navigation = useNavigation(); // To track navigation state
   const prevOrderIdRef = useRef(null);
   const [shippingAmountManuallyChanged, setShippingAmountManuallyChanged] = useState(false);
-  const [isRefunding, setIsRefunding] = useState(false);
-  const [isCalculating, setIsCalculating] = useState(false); // New state to track calculation process
-  const data = fetcher?.data || { orders: orders || [], total: total || 0, page: page || 1, selectedOrder: initialSelectedOrder };
-  const selectedOrder = isRefunding || isCalculating ? initialSelectedOrder : data?.selectedOrder; // Preserve selectedOrder during refund/calculation
+  const data = fetcher?.data || { orders: orders || [], total: total || 0, page: page || 1, selectedOrder };
 
-  // Debug logs to track orderId and selectedOrder
+  // Debug logging to identify issues
   useEffect(() => {
-    console.log("Current orderId in URL:", searchParams.get("orderId"));
     console.log("Selected Order:", selectedOrder);
-    console.log("Fetcher State:", fetcher.state);
-  }, [searchParams, selectedOrder, fetcher.state]);
+    console.log("Orders:", data?.orders);
+  }, [selectedOrder, data?.orders]);
 
   useEffect(() => {
     const params = new URLSearchParams(searchParams);
@@ -295,11 +290,8 @@ export default function RefundPage() {
         transaction_id: fetcher.data.transactionId,
         amount: fetcher.data.amount
       });
-      setIsCalculating(false); // Reset calculating state after receiving response
-    } else if (fetcher.state === "idle" && fetcher.data?.error) {
-      setIsCalculating(false); // Reset on error
     }
-  }, [fetcher?.data, fetcher.state]);
+  }, [fetcher?.data]);
 
   useEffect(() => {
     const fetchRefundHistory = async () => {
@@ -434,16 +426,13 @@ export default function RefundPage() {
 
   const handleCalculateRefund = () => {
     if (selectedProducts.length === 0) return;
-    setIsCalculating(true); // Set calculating state to preserve selectedOrder
     const formData = new FormData();
     formData.append("body", JSON.stringify({ ...preparePayload(), mode: "calculate" }));
-    // Use fetcher.submit with action to prevent navigation
-    fetcher.submit(formData, { method: "POST", action: "/app/refund", replace: false });
+    fetcher.submit(formData, { method: "POST" });
   };
 
   const handleRefund = async () => {
     if (selectedProducts.length === 0 || !refundMeta) return;
-    setIsRefunding(true);
     const metafields = selectedOrder?.metafields || {};
     const summary = `\n🧾 Refund Summary:\n\n` +
       selectedProducts.map(p => `• ${p?.title || "Unknown"} (Qty: ${p?.quantity || 0} × $${p?.price || "0"})`).join("\n") +
@@ -454,17 +443,14 @@ export default function RefundPage() {
       `• Mode: ${metafields?.payment_mode || "N/A"}\n` +
       `• Txn ID: ${metafields?.transaction_id_number || "N/A"}` +
       `\n\nClick OK to continue with the refund.`;
-    if (!window.confirm(summary)) {
-      setIsRefunding(false);
-      return;
-    }
+    if (!window.confirm(summary)) return;
 
     const paymentMode = metafields?.payment_mode?.toLowerCase();
     const transactionId = metafields?.transaction_id_number;
     const amount = refundMeta?.amount;
 
-    try {
-      if (paymentMode === 'paypal') {
+    if (paymentMode === 'paypal') {
+      try {
         const res = await fetch("https://phpstack-1419716-5486887.cloudwaysapps.com/paypal-refund", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -474,7 +460,6 @@ export default function RefundPage() {
         const data = await res.json();
         if (!data?.success) {
           alert("❌ PayPal refund failed: " + (data?.message || "Unknown error"));
-          setIsRefunding(false);
           return;
         }
 
@@ -484,7 +469,12 @@ export default function RefundPage() {
         formData.append("body", JSON.stringify({ ...payload, mode: "refund" }));
         fetcher.submit(formData, { method: "POST" });
 
-      } else if (paymentMode === 'stripe') {
+      } catch (err) {
+        alert("❌ PayPal refund error: " + (err?.message || "Unknown error"));
+        return;
+      }
+    } else if (paymentMode === 'stripe') {
+      try {
         const res = await fetch("https://phpstack-1419716-5486887.cloudwaysapps.com/stripe-refund", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -494,7 +484,6 @@ export default function RefundPage() {
         const data = await res.json();
         if (!data?.success) {
           alert("❌ Stripe refund failed: " + (data?.message || "Unknown error"));
-          setIsRefunding(false);
           return;
         }
 
@@ -504,19 +493,20 @@ export default function RefundPage() {
         formData.append("body", JSON.stringify({ ...payload, mode: "refund" }));
         fetcher.submit(formData, { method: "POST" });
 
-      } else {
-        const formData = new FormData();
-        formData.append("body", JSON.stringify({ ...preparePayload(), mode: "refund" }));
-        fetcher.submit(formData, { method: "POST" });
+      } catch (err) {
+        alert("❌ Stripe refund error: " + (err?.message || "Unknown error"));
+        return;
       }
+    } else {
+      const formData = new FormData();
+      formData.append("body", JSON.stringify({ ...preparePayload(), mode: "refund" }));
+      fetcher.submit(formData, { method: "POST" });
+    }
 
+    setTimeout(() => {
       alert(`\n✅ Refund Successful!\n\nAmount: $${amount || "0"}\nTxn: ${refundMeta?.transaction_id || "N/A"}`);
       goBack();
-
-    } catch (err) {
-      alert("❌ Refund error: " + (err?.message || "Unknown error"));
-      setIsRefunding(false);
-    }
+    }, 800);
   };
 
   function calculateMaxShippingRefund(selectedOrder, refundHistory) {
@@ -720,7 +710,7 @@ export default function RefundPage() {
                                   {line?.title || "Untitled Product"}
                                 </Text>
                                 <Text>SKU: {line?.sku || "N/A"}</Text>
-                                <Text>Quantity Refunded: ${item?.quantity || 0}</Text>
+                                <Text>Quantity Refunded: {item?.quantity || 0}</Text>
                                 <Text>Amount Refunded: ${parseFloat(item?.subtotal || 0).toFixed(2)}</Text>
                                 <Text>Tax: ${parseFloat(item?.total_tax || 0).toFixed(2)}</Text>
                               </Box>
@@ -789,24 +779,12 @@ export default function RefundPage() {
                       <Text fontWeight="bold">${refundTotal.toFixed(2)}</Text>
                     </Box>
                     <Box paddingBlockStart="200">
-                      <Button
-                        fullWidth
-                        variant="secondary"
-                        onClick={handleCalculateRefund}
-                        disabled={selectedProducts.length === 0 || isCalculating}
-                        loading={isCalculating}
-                      >
+                      <Button fullWidth variant="secondary" onClick={handleCalculateRefund} disabled={selectedProducts.length === 0}>
                         Calculate Refund
                       </Button>
                     </Box>
                     <Box paddingBlockStart="300">
-                      <Button
-                        fullWidth
-                        variant="primary"
-                        onClick={handleRefund}
-                        disabled={!refundMeta || selectedProducts.length === 0 || isRefunding}
-                        loading={isRefunding}
-                      >
+                      <Button fullWidth variant="primary" onClick={handleRefund} disabled={!refundMeta || selectedProducts.length === 0}>
                         {refundMeta
                           ? `Refund $${refundMeta?.amount || "0"}`
                           : `Refund $${refundTotal.toFixed(2)}`}
