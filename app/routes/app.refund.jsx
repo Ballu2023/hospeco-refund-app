@@ -284,7 +284,6 @@ export default function RefundPage() {
   useEffect(() => {
     if (!selectedOrder) return;
     if (selectedOrder?.id !== prevOrderIdRef.current) {
-      // Only reset if the order ID has actually changed
       if (prevOrderIdRef.current && prevOrderIdRef.current !== selectedOrder?.id) {
         setSelectedProducts([]);
       }
@@ -335,7 +334,7 @@ export default function RefundPage() {
   useEffect(() => {
     if (!selectedOrder || !refundHistory || shippingAmountManuallyChanged) return;
     const remainingShipping = calculateMaxShippingRefund(selectedOrder, refundHistory);
-    setShippingRefundAmount(remainingShipping);
+    setShippingRefundAmount(parseFloat(remainingShipping).toFixed(2));
   }, [refundHistory, selectedOrder, shippingAmountManuallyChanged]);
 
   useEffect(() => {
@@ -478,7 +477,7 @@ export default function RefundPage() {
         }
 
         const payload = preparePayload();
-        payload.variables.input.note = `Refunded via PayPal: ${data?.paypalRefundId || "N/A"} at 12:02 PM IST on 02/06/2025`;
+        payload.variables.input.note = `Refunded via PayPal: ${data?.paypalRefundId || "N/A"} at 12:14 PM IST on 02/06/2025`;
         const formData = new FormData();
         formData.append("body", JSON.stringify({ ...payload, mode: "refund" }));
         fetcher.submit(formData, { method: "POST" });
@@ -498,20 +497,19 @@ export default function RefundPage() {
         }
 
         const payload = preparePayload();
-        payload.variables.input.note = `Refunded via Stripe: ${data?.stripeRefundId || "N/A"} at 12:02 PM IST on 02/06/2025`;
+        payload.variables.input.note = `Refunded via Stripe: ${data?.stripeRefundId || "N/A"} at 12:14 PM IST on 02/06/2025`;
         const formData = new FormData();
         formData.append("body", JSON.stringify({ ...payload, mode: "refund" }));
         fetcher.submit(formData, { method: "POST" });
 
       } else {
         const payload = preparePayload();
-        payload.variables.input.note = `Refund processed via app at 12:02 PM IST on 02/06/2025`;
+        payload.variables.input.note = `Refund processed via app at 12:14 PM IST on 02/06/2025`;
         const formData = new FormData();
         formData.append("body", JSON.stringify({ ...payload, mode: "refund" }));
         fetcher.submit(formData, { method: "POST" });
       }
 
-      // Update selectedProducts to reflect new remaining quantities
       const updatedSelectedProducts = selectedProducts
         .map(product => {
           const orderItem = selectedOrder?.lineItems?.find(item => item.id === product.id);
@@ -650,7 +648,7 @@ export default function RefundPage() {
                 </Card>
                 <Card title="Refund Shipping" sectioned>
                   <Text variant="headingMd">Refund Shipping</Text>
-                  {parseFloat(shippingRefundAmount || "0") > 0 ? (
+                  {parseFloat(calculateMaxShippingRefund(selectedOrder, refundHistory)) > 0 ? (
                     <InlineGrid columns={['twoThirds', 'oneHalf']}>
                       <InlineStack gap={300} blockAlign="center">
                         <input
@@ -658,20 +656,27 @@ export default function RefundPage() {
                           checked={shippingRefundSelected}
                           onChange={e => setShippingRefundSelected(e.target.checked)}
                         />
-                        <Text>Freight - Max Refundable: ${shippingRefundAmount}</Text>
+                        <Text>Freight - Max Refundable: ${calculateMaxShippingRefund(selectedOrder, refundHistory)}</Text>
                       </InlineStack>
                       <Text as="span" alignment="end">
                         <Box paddingInlineEnd={400}>
                           <input
-                            type="text"
+                            type="number"
+                            step="0.01"
+                            min="0"
                             disabled={!shippingRefundSelected}
                             value={shippingRefundAmount}
                             onChange={(e) => {
                               const value = e.target.value;
-                              const entered = parseFloat(value || "0");
+                              if (value === "") {
+                                setShippingRefundAmount("");
+                                setShippingAmountManuallyChanged(true);
+                                return;
+                              }
+                              const entered = parseFloat(value);
                               const maxRefundable = parseFloat(calculateMaxShippingRefund(selectedOrder, refundHistory));
-                              if (isNaN(entered) || entered === 0 || value === "") {
-                                setShippingRefundAmount(maxRefundable.toFixed(2));
+                              if (isNaN(entered) || entered < 0) {
+                                setShippingRefundAmount("0.00");
                                 setShippingAmountManuallyChanged(false);
                                 return;
                               }
@@ -681,8 +686,18 @@ export default function RefundPage() {
                                 setShippingAmountManuallyChanged(false);
                                 return;
                               }
-                              setShippingRefundAmount(entered.toFixed(2));
+                              setShippingRefundAmount(value);
                               setShippingAmountManuallyChanged(true);
+                            }}
+                            onBlur={() => {
+                              const currentValue = parseFloat(shippingRefundAmount || "0");
+                              if (isNaN(currentValue) || currentValue <= 0) {
+                                const maxRefundable = parseFloat(calculateMaxShippingRefund(selectedOrder, refundHistory));
+                                setShippingRefundAmount(maxRefundable.toFixed(2));
+                                setShippingAmountManuallyChanged(false);
+                              } else {
+                                setShippingRefundAmount(currentValue.toFixed(2));
+                              }
                             }}
                             style={{
                               width: "80px",
