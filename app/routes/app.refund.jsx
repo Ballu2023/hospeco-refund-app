@@ -285,6 +285,7 @@ export default function RefundPage() {
     if (!selectedOrder) return;
     if (selectedOrder?.id !== prevOrderIdRef.current) {
       if (prevOrderIdRef.current && prevOrderIdRef.current !== selectedOrder?.id) {
+        console.log("Resetting selectedProducts for new order:", selectedOrder?.id);
         setSelectedProducts([]);
       }
       prevOrderIdRef.current = selectedOrder?.id;
@@ -477,7 +478,7 @@ export default function RefundPage() {
         }
 
         const payload = preparePayload();
-        payload.variables.input.note = `Refunded via PayPal: ${data?.paypalRefundId || "N/A"} at 12:14 PM IST on 02/06/2025`;
+        payload.variables.input.note = `Refunded via PayPal: ${data?.paypalRefundId || "N/A"} at 12:34 PM IST on 02/06/2025`;
         const formData = new FormData();
         formData.append("body", JSON.stringify({ ...payload, mode: "refund" }));
         fetcher.submit(formData, { method: "POST" });
@@ -497,31 +498,29 @@ export default function RefundPage() {
         }
 
         const payload = preparePayload();
-        payload.variables.input.note = `Refunded via Stripe: ${data?.stripeRefundId || "N/A"} at 12:14 PM IST on 02/06/2025`;
+        payload.variables.input.note = `Refunded via Stripe: ${data?.stripeRefundId || "N/A"} at 12:34 PM IST on 02/06/2025`;
         const formData = new FormData();
         formData.append("body", JSON.stringify({ ...payload, mode: "refund" }));
         fetcher.submit(formData, { method: "POST" });
 
       } else {
         const payload = preparePayload();
-        payload.variables.input.note = `Refund processed via app at 12:14 PM IST on 02/06/2025`;
+        payload.variables.input.note = `Refund processed via app at 12:34 PM IST on 02/06/2025`;
         const formData = new FormData();
         formData.append("body", JSON.stringify({ ...payload, mode: "refund" }));
         fetcher.submit(formData, { method: "POST" });
       }
 
-      const updatedSelectedProducts = selectedProducts
-        .map(product => {
-          const orderItem = selectedOrder?.lineItems?.find(item => item.id === product.id);
-          const remainingQty = orderItem ? (orderItem.quantity - (product.quantity || 0)) : 0;
-          if (remainingQty <= 0) return null;
-          return { ...product, quantity: Math.min(product.quantity, remainingQty) };
-        })
-        .filter(Boolean);
-      setSelectedProducts(updatedSelectedProducts);
+      // Reset all selections after refund
+      setSelectedProducts([]); // Reset product selections
+      setShippingRefundSelected(false); // Uncheck shipping refund
+      setShippingRefundAmount(calculateMaxShippingRefund(selectedOrder, refundHistory)); // Reset shipping amount
+      setReasonForRefund(""); // Clear reason for refund
+      setEmailCustomer(true); // Reset email customer option
+      setRefundMeta(null); // Clear refund meta
+      setShippingAmountManuallyChanged(false); // Reset shipping amount changed flag
 
       alert(`\n✅ Refund Successful!\n\nAmount: $${amount || "0"}\nTxn: ${refundMeta?.transaction_id || "N/A"}`);
-      setShippingAmountManuallyChanged(false);
       goBack();
 
     } catch (err) {
