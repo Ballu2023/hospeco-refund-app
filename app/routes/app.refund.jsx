@@ -284,8 +284,11 @@ export default function RefundPage() {
   useEffect(() => {
     if (!selectedOrder) return;
     if (selectedOrder?.id !== prevOrderIdRef.current) {
+      // Only reset if the order ID has actually changed
+      if (prevOrderIdRef.current && prevOrderIdRef.current !== selectedOrder?.id) {
+        setSelectedProducts([]);
+      }
       prevOrderIdRef.current = selectedOrder?.id;
-      setSelectedProducts([]);
       setShippingRefundSelected(false);
       setShippingRefundAmount(calculateMaxShippingRefund(selectedOrder, refundHistory));
       setReasonForRefund("");
@@ -475,7 +478,7 @@ export default function RefundPage() {
         }
 
         const payload = preparePayload();
-        payload.variables.input.note = `Refunded via PayPal: ${data?.paypalRefundId || "N/A"} at 11:47 AM IST on 02/06/2025`;
+        payload.variables.input.note = `Refunded via PayPal: ${data?.paypalRefundId || "N/A"} at 12:02 PM IST on 02/06/2025`;
         const formData = new FormData();
         formData.append("body", JSON.stringify({ ...payload, mode: "refund" }));
         fetcher.submit(formData, { method: "POST" });
@@ -495,18 +498,29 @@ export default function RefundPage() {
         }
 
         const payload = preparePayload();
-        payload.variables.input.note = `Refunded via Stripe: ${data?.stripeRefundId || "N/A"} at 11:47 AM IST on 02/06/2025`;
+        payload.variables.input.note = `Refunded via Stripe: ${data?.stripeRefundId || "N/A"} at 12:02 PM IST on 02/06/2025`;
         const formData = new FormData();
         formData.append("body", JSON.stringify({ ...payload, mode: "refund" }));
         fetcher.submit(formData, { method: "POST" });
 
       } else {
         const payload = preparePayload();
-        payload.variables.input.note = `Refund processed via app at 11:47 AM IST on 02/06/2025`;
+        payload.variables.input.note = `Refund processed via app at 12:02 PM IST on 02/06/2025`;
         const formData = new FormData();
         formData.append("body", JSON.stringify({ ...payload, mode: "refund" }));
         fetcher.submit(formData, { method: "POST" });
       }
+
+      // Update selectedProducts to reflect new remaining quantities
+      const updatedSelectedProducts = selectedProducts
+        .map(product => {
+          const orderItem = selectedOrder?.lineItems?.find(item => item.id === product.id);
+          const remainingQty = orderItem ? (orderItem.quantity - (product.quantity || 0)) : 0;
+          if (remainingQty <= 0) return null;
+          return { ...product, quantity: Math.min(product.quantity, remainingQty) };
+        })
+        .filter(Boolean);
+      setSelectedProducts(updatedSelectedProducts);
 
       alert(`\n✅ Refund Successful!\n\nAmount: $${amount || "0"}\nTxn: ${refundMeta?.transaction_id || "N/A"}`);
       setShippingAmountManuallyChanged(false);
@@ -720,7 +734,7 @@ export default function RefundPage() {
                                 <Text fontWeight="bold">
                                   {line?.title || "Untitled Product"}
                                 </Text>
-                                <Text>SKU: {line?.sku || "N/A"}</Text>
+                                <Text>SKU: ${line?.sku || "N/A"}</Text>
                                 <Text>Quantity Refunded: ${item?.quantity || 0}</Text>
                                 <Text>Amount Refunded: ${parseFloat(item?.subtotal || 0).toFixed(2)}</Text>
                                 <Text>Tax: ${parseFloat(item?.total_tax || 0).toFixed(2)}</Text>
@@ -745,7 +759,7 @@ export default function RefundPage() {
                             <Box paddingBlockStart="100" paddingBlockEnd={300}>
                               <Text fontWeight="bold">Transaction ID:</Text>
                               <Text>{refund.transactions[0].id}</Text>
-                              <Text>Gateway: {refund.transactions[0].gateway}</Text>
+                              <Text>Gateway: ${refund.transactions[0].gateway}</Text>
                             </Box>
                           )}
                           <Divider borderColor="border" />
